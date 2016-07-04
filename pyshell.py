@@ -6,6 +6,7 @@ import shlex
 import string
 import subprocess
 import sys
+import tempfile
 
 class Mode(object):
 
@@ -58,6 +59,8 @@ class Shell(object):
         self.undoc_header = "Undocumented commands:"
         self.nohelp = "*** No help on %s"
 
+        readline.parse_and_bind('tab: complete')
+
     @property
     def prompt(self):
         return str(self._prompt)
@@ -84,10 +87,28 @@ class Shell(object):
         off the received input, and dispatch to action methods, passing them
         the remainder of the line as argument.
 
+        The completer function, together with the history buffer, is saved and
+        restored upon exit.
+
+        The history buffer is saved and restored from a temporary file.
         """
+        # Save the completer function and the history buffer.
+
+        # CAVEAT: The readline library handles history files solely by the
+        # filenames. This forces us to a) use NamedTemporaryFile() instead of
+        # TemporaryFile(), and b) close the generated file before feeding the
+        # file name to readline.write_history_file). Usually this should be
+        # fine. But there is a small risk of race condition in this solution.
         old_completer = readline.get_completer()
+        history_tmpfile = tempfile.NamedTemporaryFile('w+')
+        history_tmpfile.close()
+        readline.write_history_file(history_tmpfile.name)
+        readline.clear_history()
+
+        # Load the new completer function and start a new history buffer.
         readline.set_completer(self.complete)
-        readline.parse_and_bind('tab: complete')
+
+        # main loop
         try:
             if self.intro:
                 self.stdout.write(str(self.intro) + '\n')
@@ -102,7 +123,10 @@ class Shell(object):
                         line = Shell.EOF
                 stop = self._onecmd(line)
         finally:
+            # Restore the completer function and the history buffer.
             readline.set_completer(old_completer)
+            readline.clear_history()
+            readline.read_history_file(history_tmpfile.name)
 
     def _parse_line(self, line):
         """Parse a line of input.
@@ -161,7 +185,9 @@ class Shell(object):
         proc.wait()
 
     def complete(self, text, state):
-        """Return the next possible completion for 'text'.
+        """Completer function of this shell.
+
+        Use readline.get_line_buffer() to
 
         If a command has not been entered, then complete against command list.
         Otherwise try to call complete_<command> to get list of completions.
@@ -175,12 +201,12 @@ class Shell(object):
             if begidx>0:
                 cmd, args, foo = self.parseline(line)
                 if cmd == '':
-                    compfunc = self.completedefault
+                    compfunc = self.__complete_default
                 else:
                     if hasattr(self, 'complete_' + cmd):
                         compfunc = getattr(self, 'complete_' + cmd)
                     else:
-                        compfunc = self.completedefault
+                        compfunc = self.__complete_default
             else:
                 compfunc = self.completenames
             self.completion_matches = compfunc(text, line, begidx, endidx)
@@ -188,6 +214,9 @@ class Shell(object):
             return self.completion_matches[state]
         except IndexError:
             return None
+
+    def __complete_default(self, *args, **kwargs):
+        return []
 
     __identchars = string.ascii_letters + string.digits + '_'
     def parseline(self, line):
