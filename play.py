@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
 
+"""An example shell, with subshell enabled.
+
+$ ./play.py
+()$ foo
+(FooShell)$ kar
+(FooShell-kar)$
+(FooShell)$
+()$
+"""
+
 import pyshell
 
 class MyShell(pyshell.Shell):

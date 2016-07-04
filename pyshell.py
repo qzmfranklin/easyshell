@@ -4,6 +4,7 @@
 import readline
 import shlex
 import string
+import subprocess
 import sys
 
 class Mode(object):
@@ -20,28 +21,37 @@ class Mode(object):
 
 class Shell(object):
 
+    EOF = chr(ord('D') - 64)
+
     def __init__(self, *,
             mode_stack = [],
             stdout = sys.stdout,
+            stderr = sys.stderr,
+            cmd_prefix = 'do_',
             intro = ''):
         """Instantiate a line-oriented interpreter framework.
 
         Arguments:
             mode_stack: A stack of Mode objects.
             stdout: The file object to write to for output.
+            cmd_prefix: Default 'do_' means all methods whose names start with
+                'do_' are command methods.
         """
-        self.cmd_queue = []
-
         self._mode_stack = mode_stack
         self._prompt = '({})$ '.format('-'.join( \
                 [ m.prompt_display for m in mode_stack ]))
 
+        self.cmd_prefix = cmd_prefix
+        self.intro = intro
+
         self.stdout = stdout
+        self.stderr = stderr
+
+        self.cmd_queue = []
 
         self.ruler = '='
         self.lastcmd = ''
 
-        self.intro = intro
         self.doc_leader = ""
         self.doc_header = "Documented commands (type help <topic>):"
         self.misc_header = "Miscellaneous help topics:"
@@ -51,38 +61,6 @@ class Shell(object):
     @property
     def prompt(self):
         return str(self._prompt)
-
-    def parse_line(self, line):
-        """Parse a line of input.
-
-        '?'  => help
-        '!'  => shell
-        C-D  => exit
-
-        Arguments:
-            line: A string, representing a line of input from the shell. This
-                string is preprocessed by cmdloop() to convert the EOF character
-                to '\\x04', i.e., 'D' - 64, if the EOF character is the only
-                character from the shell.
-
-        Returns:
-            A tuple (cmd, args) where args is a list of strings. If the input
-            line has only a single EOF character '\\x04', return ( 'exit', [] ).
-        """
-        if line == '\x04':
-            return ( 'exit', ['\n'] )
-
-        toks = shlex.split(line.strip())
-        if len(toks) == 0:
-            return ( '', [] )
-
-        cmd = toks[0]
-        if cmd == '?':
-            cmd = 'help'
-        elif cmd == '!':
-            cmd = 'shell'
-
-        return ( cmd, [] if len(toks) == 1 else toks[1:] )
 
     def launch_subshell(self, shell_cls, args, *, prompt_display = None):
         """Launch a subshell.
@@ -121,39 +99,66 @@ class Shell(object):
                     try:
                         line = input(self.prompt).strip()
                     except EOFError:
-                        line = chr(ord('D') - 64)
+                        line = Shell.EOF
                 stop = self._onecmd(line)
         finally:
             readline.set_completer(old_completer)
+
+    def _parse_line(self, line):
+        """Parse a line of input.
+
+        '?'  => help
+        '!'  => shell
+        C-D  => exit, insert 'exit\\n' to the command line.
+
+        Arguments:
+            line: A string, representing a line of input from the shell. This
+                string is preprocessed by cmdloop() to convert the EOF character
+                to '\\x04', i.e., 'D' - 64, if the EOF character is the only
+                character from the shell.
+
+        Returns:
+            A tuple (cmd, args) where args is a list of strings. If the input
+            line has only a single EOF character '\\x04', return ( 'exit', [] ).
+        """
+        if line == Shell.EOF:
+            # This is a hack to allow the EOF character to behave exactly like
+            # typing the 'exit' command.
+            readline.insert_text('exit\n')
+            readline.redisplay()
+            return ( 'exit', [] )
+
+        toks = shlex.split(line.strip())
+        if len(toks) == 0:
+            return ( '', [] )
+
+        cmd = toks[0]
+        if cmd == '?':
+            cmd = 'help'
+        elif cmd == '!':
+            cmd = 'exec'
+
+        return ( cmd, [] if len(toks) == 1 else toks[1:] )
 
     def _onecmd(self, line):
         """Execute a command."""
         if not line:
             return
-        cmd, args = self.parse_line(line)
-        try:
+        cmd, args = self._parse_line(line)
+        if hasattr(self, 'do_' + cmd):
             func = getattr(self, 'do_' + cmd)
             return func(args)
-        except AttributeError:
-            self.stdout.write("{}: command not found\n".format(cmd))
-            return
+        else:
+            self.stderr.write("{}: command not found\n".format(cmd))
 
-    def do_exit(self, *args):
+    def do_exit(self, args):
         """Exit this shell. Same as C-D."""
-        self.stdout.write('\n')
         return True
 
-    def completedefault(self, *ignored):
-        """Method called to complete an input line when no command-specific
-        complete_*() method is available.
-
-        By default, it returns an empty list.
-        """
-        return []
-
-    def completenames(self, text, *ignored):
-        dotext = 'do_'+text
-        return [a[3:] for a in self.get_names() if a.startswith(dotext)]
+    def do_exec(self, args):
+        """Execute a command using subprocess.Popen()."""
+        proc = subprocess.Popen(args, stdout = self.stdout)
+        proc.wait()
 
     def complete(self, text, state):
         """Return the next possible completion for 'text'.
@@ -172,9 +177,9 @@ class Shell(object):
                 if cmd == '':
                     compfunc = self.completedefault
                 else:
-                    try:
+                    if hasattr(self, 'complete_' + cmd):
                         compfunc = getattr(self, 'complete_' + cmd)
-                    except AttributeError:
+                    else:
                         compfunc = self.completedefault
             else:
                 compfunc = self.completenames
@@ -205,14 +210,16 @@ class Shell(object):
         cmd, arg = line[:i], line[i:].strip()
         return cmd, arg, line
 
-    def get_names(self):
-        # This method used to pull in base class attributes
-        # at a time dir() didn't do it yet.
-        return dir(self.__class__)
+    def completenames(self, text, *ignored):
+        start_text = self.cmd_prefix + text
+        return [ name[len(self.cmd_prefix):] \
+                        for name in dir(self.__class__) \
+                        if name.startswith(start_text)
+                ]
 
     def complete_help(self, *args):
         commands = set(self.completenames(*args))
-        topics = set(a[5:] for a in self.get_names()
+        topics = set(a[5:] for a in dir(self.__class__)
                      if a.startswith('help_' + args[0]))
         return list(commands | topics)
 
@@ -234,7 +241,7 @@ class Shell(object):
                 return
             func()
         else:
-            names = self.get_names()
+            names = dir(self.__class__)
             cmds_doc = []
             cmds_undoc = []
             help = {}
@@ -269,60 +276,3 @@ class Shell(object):
                 self.stdout.write("%s\n"%str(self.ruler * len(header)))
             self.columnize(cmds, maxcol-1)
             self.stdout.write("\n")
-
-    def columnize(self, list, displaywidth=80):
-        """Display a list of strings as a compact set of columns.
-
-        Each column is only as wide as necessary.
-        Columns are separated by two spaces (one was not legible enough).
-        """
-        if not list:
-            self.stdout.write("<empty>\n")
-            return
-
-        nonstrings = [i for i in range(len(list))
-                        if not isinstance(list[i], str)]
-        if nonstrings:
-            raise TypeError("list[i] not a string for i in %s"
-                            % ", ".join(map(str, nonstrings)))
-        size = len(list)
-        if size == 1:
-            self.stdout.write('%s\n'%str(list[0]))
-            return
-        # Try every row count from 1 upwards
-        for nrows in range(1, len(list)):
-            ncols = (size+nrows-1) // nrows
-            colwidths = []
-            totwidth = -2
-            for col in range(ncols):
-                colwidth = 0
-                for row in range(nrows):
-                    i = row + nrows*col
-                    if i >= size:
-                        break
-                    x = list[i]
-                    colwidth = max(colwidth, len(x))
-                colwidths.append(colwidth)
-                totwidth += colwidth + 2
-                if totwidth > displaywidth:
-                    break
-            if totwidth <= displaywidth:
-                break
-        else:
-            nrows = len(list)
-            ncols = 1
-            colwidths = [0]
-        for row in range(nrows):
-            texts = []
-            for col in range(ncols):
-                i = row + nrows*col
-                if i >= size:
-                    x = ""
-                else:
-                    x = list[i]
-                texts.append(x)
-            while texts and not texts[-1]:
-                del texts[-1]
-            for col in range(len(texts)):
-                texts[col] = texts[col].ljust(colwidths[col])
-            self.stdout.write("%s\n"%str("  ".join(texts)))
