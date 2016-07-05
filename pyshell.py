@@ -9,7 +9,8 @@ import subprocess
 import sys
 import tempfile
 
-# Decorators with argument is a little bit confusing. A good clarification is:
+# Decorators with arguments is a little bit tricky to get right. A good
+# thread on it is:
 #       http://stackoverflow.com/questions/5929107/python-decorators-with-parameters
 def command(*names):
     """Decorator function for adding __command__ to a function object.
@@ -24,23 +25,21 @@ def command(*names):
 
     return real_decorator
 
+# The naming convention is same as the inspect module, which has such predicate
+# methods as isfunction, isclass, ismethod, etc..
 def iscommand(func):
+    """Is the function object a command or not."""
     return hasattr(func, '__command__')
 
 
-class Mode(object):
-
-    def __init__(self, args, prompt_display):
-        """
-        Arguments:
-            args: A list of strings.
-            prompt_display: The string to appear in prompt. If None, only the
-                cmd will appear.
-        """
-        self.args = args
-        self.prompt_display = prompt_display
-
 class Shell(object):
+
+    class _Mode(object):
+        """Stack mode information used when entering and leaving a subshell.
+        """
+        def __init__(self, args, prompt_display):
+            self.args = args
+            self.prompt_display = prompt_display
 
     EOF = chr(ord('D') - 64)
     _special_delims = '?!'
@@ -53,7 +52,7 @@ class Shell(object):
         """Instantiate a line-oriented interpreter framework.
 
         Arguments:
-            mode_stack: A stack of Mode objects.
+            mode_stack: A stack of Shell._Mode objects.
             stdout, stderr: The file objects to write to for output and error.
             temp_dir: The temporary directory to save history files. The default
                 value, None, means to generate such a directory.
@@ -113,7 +112,7 @@ class Shell(object):
         readline.write_history_file(self.history_fname)
 
         prompt_display = prompt_display if prompt_display else shell_cls.__name__
-        mode = Mode(args, prompt_display)
+        mode = Shell._Mode(args, prompt_display)
         shell = shell_cls(
                 mode_stack = self._mode_stack + [ mode ],
                 stdout = self.stdout,
@@ -305,15 +304,13 @@ class Shell(object):
                 elif text == '!':
                     return 'exec'
                 else: # Otherwise try to match the prefix of available commands.
-                    self._completion_matches = self.__complete_cmds(text)
+                    self._completion_matches = \
+                            self.__complete_cmds(text)
             else:
                 self._completion_macthes = []
                 return None
 
         return self._completion_matches[state]
-
-    def __complete_default(self, *args, **kwargs):
-        return []
 
     def __complete_cmds(self, text):
         return [ name for name in self._cmd_map.keys() if name.startswith(text) ]
