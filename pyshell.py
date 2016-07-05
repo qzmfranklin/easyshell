@@ -9,6 +9,25 @@ import subprocess
 import sys
 import tempfile
 
+# Decorators with argument is a little bit confusing. A good clarification is:
+#       http://stackoverflow.com/questions/5929107/python-decorators-with-parameters
+def command(*names):
+    """Decorator function for adding __command__ to a function object.
+
+    Arguments:
+        func: The function object to modify.
+        names: Names of command that should trigger this function object.
+    """
+    def real_decorator(f):
+        f.__command__ = list(names)
+        return f
+
+    return real_decorator
+
+def iscommand(func):
+    return hasattr(func, '__command__')
+
+
 class Mode(object):
 
     def __init__(self, args, prompt_display):
@@ -23,7 +42,6 @@ class Mode(object):
 
 class Shell(object):
 
-    cmd_prefix = 'do_'
     EOF = chr(ord('D') - 64)
     _special_delims = '?!'
 
@@ -51,6 +69,25 @@ class Shell(object):
         self._completion_matches = []
 
         readline.parse_and_bind('tab: complete')
+
+        self._cmd_map = self.__build_cmd_map()
+
+    def __build_cmd_map(self):
+        """Build a mapping from commands to method names.
+
+        One command maps to at most one method.
+        Multiple commands can map to the same method.
+
+        Only used by __init__() to initialize self._cmd_map. MUST NOT be used
+        elsewhere.
+        """
+        ret = {}
+        for name in dir(self):
+            obj = getattr(self, name)
+            if iscommand(obj):
+                for cmd in obj.__command__:
+                    ret[cmd] = obj.__name__
+        return ret
 
     @property
     def prompt(self):
@@ -193,21 +230,26 @@ class Shell(object):
         return ( cmd, [] if len(toks) == 1 else toks[1:] )
 
     def _onecmd(self, line):
-        """Execute a command."""
+        """Execute a command.
+
+        emptyline: no-op
+        unknown command: print error message
+        known command: invoke the corresponding method
+        """
         if not line:
             return
+
         cmd, args = self._parse_line(line)
-        if hasattr(self, 'do_' + cmd):
-            func = getattr(self, 'do_' + cmd)
-            return func(args)
-        else:
+        if not cmd in self._cmd_map.keys():
             self.stderr.write("{}: command not found\n".format(cmd))
+            return
 
-    def do_exit(self, args):
-        """Exit this shell. Same as C-D."""
-        return True
+        func_name = self._cmd_map[cmd]
+        func = getattr(self, func_name)
+        return func(args)
 
-    def do_exec(self, args):
+    @command('exec')
+    def _do_exec(self, args):
         """Execute a command using subprocess.Popen()."""
         if not args:
             self.stderr.write("exec: empty command\n")
@@ -215,7 +257,18 @@ class Shell(object):
         proc = subprocess.Popen(args, shell = True, stdout = self.stdout)
         proc.wait()
 
-    def do_history(self, args):
+    @command('exit')
+    def _do_exit(self, args):
+        """Exit this shell. Same as C-D."""
+        return True
+
+    @command('help')
+    def _do_help(self, args):
+        """Print help messages most relevant to the current line."""
+        pass
+
+    @command('history')
+    def _do_history(self, args):
         """Dump the history in this shell.
 
         A side effect is that this method flushes the current history buffer to
@@ -252,7 +305,7 @@ class Shell(object):
                 elif text == '!':
                     return 'exec'
                 else: # Otherwise try to match the prefix of available commands.
-                    self._completion_matches = self._get_cmds_with_prefix(text)
+                    self._completion_matches = self.__complete_cmds(text)
             else:
                 self._completion_macthes = []
                 return None
@@ -262,77 +315,5 @@ class Shell(object):
     def __complete_default(self, *args, **kwargs):
         return []
 
-    def _get_cmds_with_prefix(self, text):
-        """Get the list of commands starting with the given text."""
-        start_text = Shell.cmd_prefix + text
-        return [ name[len(Shell.cmd_prefix):] \
-                        for name in dir(self.__class__) \
-                        if name.startswith(start_text)
-                ]
-
-    def completenames(self, text, *ignored):
-        start_text = Shell.cmd_prefix + text
-        return [ name[len(Shell.cmd_prefix):] \
-                        for name in dir(self.__class__) \
-                        if name.startswith(start_text)
-                ]
-
-    def complete_help(self, *args):
-        commands = set(self.completenames(*args))
-        topics = set(a[5:] for a in dir(self.__class__)
-                     if a.startswith('help_' + args[0]))
-        return list(commands | topics)
-
-    def do_help(self, arg):
-        'List available commands with "help" or detailed help with "help cmd".'
-        if arg:
-            # XXX check arg syntax
-            try:
-                func = getattr(self, 'help_' + arg)
-            except AttributeError:
-                try:
-                    doc=getattr(self, 'do_' + arg).__doc__
-                    if doc:
-                        self.stdout.write("%s\n"%str(doc))
-                        return
-                except AttributeError:
-                    pass
-                self.stdout.write("%s\n"%str(self.nohelp % (arg,)))
-                return
-            func()
-        else:
-            names = dir(self.__class__)
-            cmds_doc = []
-            cmds_undoc = []
-            help = {}
-            for name in names:
-                if name[:5] == 'help_':
-                    help[name[5:]]=1
-            names.sort()
-            # There can be duplicates if routines overridden
-            prevname = ''
-            for name in names:
-                if name[:3] == 'do_':
-                    if name == prevname:
-                        continue
-                    prevname = name
-                    cmd=name[3:]
-                    if cmd in help:
-                        cmds_doc.append(cmd)
-                        del help[cmd]
-                    elif getattr(self, name).__doc__:
-                        cmds_doc.append(cmd)
-                    else:
-                        cmds_undoc.append(cmd)
-            self.stdout.write("%s\n"%str(self.doc_leader))
-            self.print_topics(self.doc_header,   cmds_doc,   15,80)
-            self.print_topics(self.misc_header,  list(help.keys()),15,80)
-            self.print_topics(self.undoc_header, cmds_undoc, 15,80)
-
-    def print_topics(self, header, cmds, cmdlen, maxcol):
-        if cmds:
-            self.stdout.write("%s\n"%str(header))
-            if self.ruler:
-                self.stdout.write("%s\n"%str(self.ruler * len(header)))
-            self.columnize(cmds, maxcol-1)
-            self.stdout.write("\n")
+    def __complete_cmds(self, text):
+        return [ name for name in self._cmd_map.keys() if name.startswith(text) ]
