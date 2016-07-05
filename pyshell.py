@@ -1,6 +1,7 @@
 """A generic class to build line-oriented command interpreters.
 """
 
+import os
 import readline
 import shlex
 import string
@@ -22,42 +23,32 @@ class Mode(object):
 
 class Shell(object):
 
+    cmd_prefix = 'do_'
     EOF = chr(ord('D') - 64)
+    _special_delims = '?!'
 
     def __init__(self, *,
             mode_stack = [],
             stdout = sys.stdout,
             stderr = sys.stderr,
-            cmd_prefix = 'do_',
-            intro = ''):
+            temp_dir = None):
         """Instantiate a line-oriented interpreter framework.
 
         Arguments:
             mode_stack: A stack of Mode objects.
-            stdout: The file object to write to for output.
-            cmd_prefix: Default 'do_' means all methods whose names start with
-                'do_' are command methods.
+            stdout, stderr: The file objects to write to for output and error.
+            temp_dir: The temporary directory to save history files. The default
+                value, None, means to generate such a directory.
         """
+        self.stdout = stdout
+        self.stderr = stderr
         self._mode_stack = mode_stack
         self._prompt = '({})$ '.format('-'.join( \
                 [ m.prompt_display for m in mode_stack ]))
+        self._temp_dir = temp_dir if temp_dir else tempfile.mkdtemp()
+        os.makedirs(os.path.join(self._temp_dir, 'history'), exist_ok = True)
 
-        self.cmd_prefix = cmd_prefix
-        self.intro = intro
-
-        self.stdout = stdout
-        self.stderr = stderr
-
-        self.cmd_queue = []
-
-        self.ruler = '='
-        self.lastcmd = ''
-
-        self.doc_leader = ""
-        self.doc_header = "Documented commands (type help <topic>):"
-        self.misc_header = "Miscellaneous help topics:"
-        self.undoc_header = "Undocumented commands:"
-        self.nohelp = "*** No help on %s"
+        self._completion_matches = []
 
         readline.parse_and_bind('tab: complete')
 
@@ -65,8 +56,15 @@ class Shell(object):
     def prompt(self):
         return str(self._prompt)
 
+    @property
+    def history_fname(self):
+        return os.path.join(self._temp_dir, 'history', 's-' + self.prompt[1:-2])
+
     def launch_subshell(self, shell_cls, args, *, prompt_display = None):
         """Launch a subshell.
+
+        The doc string of the cmdloop() method explains how shell histories and
+        history files are saved and restored.
 
         Arguments:
             shell_cls: The Shell class object to instantiate and launch.
@@ -74,13 +72,23 @@ class Shell(object):
             prompt_display: The name of the subshell. The default, None, means
                 to use the shell_cls.__name__.
         """
+        # Save history of the current shell.
+        readline.write_history_file(self.history_fname)
+
         prompt_display = prompt_display if prompt_display else shell_cls.__name__
         mode = Mode(args, prompt_display)
         shell = shell_cls(
                 mode_stack = self._mode_stack + [ mode ],
                 stdout = self.stdout,
+                stderr = self.stderr,
+                temp_dir = self._temp_dir,
         )
+        # The subshell creates its own history context.
         shell.cmdloop()
+
+        # Restore history.
+        readline.clear_history()
+        readline.read_history_file(self.history_fname)
 
     def cmdloop(self):
         """Repeatedly issue a prompt, accept input, parse an initial prefix
@@ -90,43 +98,63 @@ class Shell(object):
         The completer function, together with the history buffer, is saved and
         restored upon exit.
 
-        The history buffer is saved and restored from a temporary file.
-        """
-        # Save the completer function and the history buffer.
+        Shell history:
 
-        # CAVEAT: The readline library handles history files solely by the
-        # filenames. This forces us to a) use NamedTemporaryFile() instead of
-        # TemporaryFile(), and b) close the generated file before feeding the
-        # file name to readline.write_history_file). Usually this should be
-        # fine. But there is a small risk of race condition in this solution.
+            Shell histories are persistently saved to files, whose name matches
+            the prompt string. For example, if the prompt of a subshell is
+            '(Foo-Bar-Kar)$ ', the name of its history file is s-Foo-Bar-Kar.
+            The history_fname property encodes this algorithm.
+
+            All history files are saved to the the directory whose path is
+            self._temp_dir. Subshells use the same temp_dir as their parent
+            shells, thus their root shell.
+
+            The history of the parent shell is saved and restored by the parent
+            shell, as in launch_subshell(). The history of the subshell is saved
+            and restored by the subshell, as in cmdloop().
+
+            When a subshell is started, i.e., when the cmdloop() method of the
+            subshell is called, the subshell will try to load its own history
+            file, whose file name is determined by the naming convention
+            introduced earlier.
+
+        Completer Delimiters:
+
+            Two special delimiters '?' and '!' are expanded into 'help' and
+            'exec' respectively. But by default they are completer_delims, which
+            are never selected as any completion scope.
+
+            The old completer delimiters are saved before the loop and restored
+            after the loop ends. This is to keep the environment clean.
+        """
+        # Save the completer function, the history buffer, and the
+        # completer_delims.
         old_completer = readline.get_completer()
-        history_tmpfile = tempfile.NamedTemporaryFile('w+')
-        history_tmpfile.close()
-        readline.write_history_file(history_tmpfile.name)
         readline.clear_history()
+        if os.path.isfile(self.history_fname):
+            readline.read_history_file(self.history_fname)
+        old_delims = readline.get_completer_delims()
+        new_delims = ''.join(list(set(old_delims) - set(Shell._special_delims)))
+        readline.set_completer_delims(new_delims)
 
         # Load the new completer function and start a new history buffer.
-        readline.set_completer(self.complete)
+        readline.set_completer(self._completer)
 
         # main loop
         try:
-            if self.intro:
-                self.stdout.write(str(self.intro) + '\n')
             stop = False
             while not stop:
-                if self.cmd_queue:
-                    line = self.cmd_queue.pop(0)
-                else:
-                    try:
-                        line = input(self.prompt).strip()
-                    except EOFError:
-                        line = Shell.EOF
+                try:
+                    line = input(self.prompt).strip()
+                except EOFError:
+                    line = Shell.EOF
                 stop = self._onecmd(line)
         finally:
-            # Restore the completer function and the history buffer.
+            # Restore the completer function, save the history, and restore old
+            # delims.
             readline.set_completer(old_completer)
-            readline.clear_history()
-            readline.read_history_file(history_tmpfile.name)
+            readline.write_history_file(self.history_fname)
+            readline.set_completer_delims(old_delims)
 
     def _parse_line(self, line):
         """Parse a line of input.
@@ -181,67 +209,70 @@ class Shell(object):
 
     def do_exec(self, args):
         """Execute a command using subprocess.Popen()."""
-        proc = subprocess.Popen(args, stdout = self.stdout)
+        if not args:
+            self.stderr.write("exec: empty command\n")
+            return
+        proc = subprocess.Popen(args, shell = True, stdout = self.stdout)
         proc.wait()
 
-    def complete(self, text, state):
-        """Completer function of this shell.
+    def do_history(self, args):
+        """Dump the history in this shell.
 
-        Use readline.get_line_buffer() to
+        A side effect is that this method flushes the current history buffer to
+        the history file, whose file name is given by the history_fname
+        property.
+        """
+        readline.write_history_file(self.history_fname)
+        with open(self.history_fname, 'r', encoding = 'utf8') as f:
+            self.stdout.write(f.read())
 
-        If a command has not been entered, then complete against command list.
-        Otherwise try to call complete_<command> to get list of completions.
+    def _completer(self, text, state):
+        """Driver level completer function of this shell.
+
+        The interface of this method is defined the readline library.
+
+        Arguments:
+            text: A string, that is the current completion scope.
+            state: An integer.
+
+        Returns:
+            A string used to replace the given text.
         """
         if state == 0:
             origline = readline.get_line_buffer()
             line = origline.lstrip()
-            stripped = len(origline) - len(line)
-            begidx = readline.get_begidx() - stripped
-            endidx = readline.get_endidx() - stripped
-            if begidx>0:
-                cmd, args, foo = self.parseline(line)
-                if cmd == '':
-                    compfunc = self.__complete_default
-                else:
-                    if hasattr(self, 'complete_' + cmd):
-                        compfunc = getattr(self, 'complete_' + cmd)
-                    else:
-                        compfunc = self.__complete_default
+            offset = len(origline) - len(line)
+            begidx = readline.get_begidx() - offset
+            endidx = readline.get_endidx() - offset
+            # If the current scope is the first token in the line. Leading '?'
+            # is converted to 'help'. Leading '!' is converted to 'exec'.
+            if begidx == 0:
+                if text == '?':
+                    return 'help'
+                elif text == '!':
+                    return 'exec'
+                else: # Otherwise try to match the prefix of available commands.
+                    self._completion_matches = self._get_cmds_with_prefix(text)
             else:
-                compfunc = self.completenames
-            self.completion_matches = compfunc(text, line, begidx, endidx)
-        try:
-            return self.completion_matches[state]
-        except IndexError:
-            return None
+                self._completion_macthes = []
+                return None
+
+        return self._completion_matches[state]
 
     def __complete_default(self, *args, **kwargs):
         return []
 
-    __identchars = string.ascii_letters + string.digits + '_'
-    def parseline(self, line):
-        """Parse the line into a command name and a string containing
-        the arguments.  Returns a tuple containing (command, args, line).
-        'command' and 'args' may be None if the line couldn't be parsed.
-        """
-        line = line.strip()
-        if not line:
-            return None, None, line
-        elif line[0] == '?':
-            line = 'help ' + line[1:]
-        elif line[0] == '!':
-            if hasattr(self, 'do_shell'):
-                line = 'shell ' + line[1:]
-            else:
-                return None, None, line
-        i, n = 0, len(line)
-        while i < n and line[i] in self.__identchars: i = i+1
-        cmd, arg = line[:i], line[i:].strip()
-        return cmd, arg, line
+    def _get_cmds_with_prefix(self, text):
+        """Get the list of commands starting with the given text."""
+        start_text = Shell.cmd_prefix + text
+        return [ name[len(Shell.cmd_prefix):] \
+                        for name in dir(self.__class__) \
+                        if name.startswith(start_text)
+                ]
 
     def completenames(self, text, *ignored):
-        start_text = self.cmd_prefix + text
-        return [ name[len(self.cmd_prefix):] \
+        start_text = Shell.cmd_prefix + text
+        return [ name[len(Shell.cmd_prefix):] \
                         for name in dir(self.__class__) \
                         if name.startswith(start_text)
                 ]
