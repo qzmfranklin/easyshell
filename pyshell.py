@@ -4,7 +4,6 @@
 import os
 import readline
 import shlex
-import string
 import subprocess
 import sys
 import tempfile
