@@ -14,23 +14,40 @@ import tempfile
 #       http://stackoverflow.com/questions/5929107/python-decorators-with-parameters
 def command(*names):
     """Decorator function for adding __command__ to a function object.
-
     Arguments:
-        func: The function object to modify.
         names: Names of command that should trigger this function object.
     """
-    def real_decorator(f):
+    def decorated_func(f):
         f.__command__ = list(names)
         return f
-
-    return real_decorator
+    return decorated_func
 
 # The naming convention is same as the inspect module, which has such predicate
 # methods as isfunction, isclass, ismethod, etc..
-def iscommand(func):
+def iscommand(f):
     """Is the function object a command or not."""
-    return hasattr(func, '__command__')
+    return hasattr(f, '__command__')
 
+# A parametrized decorator decorating a method is very tricky. To fully
+# understand, please first consult this thread:
+#       http://stackoverflow.com/questions/11731136/python-class-method-decorator-w-self-arguments
+# Then note that when the method being decorated is printed, its __name__
+# attribute is unchanged but the repr() function displays the method as
+# 'inner_func'.
+def subshell(shell_cls, *names):
+    """Decorator function for launching a subshell.
+
+    Returns:
+        A string used as the prompt.
+    """
+    def decorated_func(f):
+        def inner_func(self, args):
+            prompt_display = f(self, args)
+            return self.launch_subshell(shell_cls, args,
+                    prompt_display = prompt_display)
+        inner_func.__name__ = f.__name__
+        return command(*names)(inner_func) if names else inner_func
+    return decorated_func
 
 class Shell(object):
 
@@ -42,12 +59,13 @@ class Shell(object):
             self.prompt_display = prompt_display
 
     EOF = chr(ord('D') - 64)
-    _special_delims = '?!'
+    _non_delims = '-'
 
     def __init__(self, *,
             mode_stack = [],
             stdout = sys.stdout,
             stderr = sys.stderr,
+            root_prompt = 'root',
             temp_dir = None):
         """Instantiate a line-oriented interpreter framework.
 
@@ -60,12 +78,11 @@ class Shell(object):
         self.stdout = stdout
         self.stderr = stderr
         self._mode_stack = mode_stack
-        self._prompt = '({})$ '.format('-'.join( \
+        self._prompt = '({})$ '.format('-'.join(
+                [ root_prompt ] + \
                 [ m.prompt_display for m in mode_stack ]))
         self._temp_dir = temp_dir if temp_dir else tempfile.mkdtemp()
         os.makedirs(os.path.join(self._temp_dir, 'history'), exist_ok = True)
-
-        self._completion_matches = []
 
         readline.parse_and_bind('tab: complete')
 
@@ -94,7 +111,11 @@ class Shell(object):
 
     @property
     def history_fname(self):
+        """The temporary for storing the history of this shell."""
         return os.path.join(self._temp_dir, 'history', 's-' + self.prompt[1:-2])
+
+    def print_debug(self, msg):
+        pass
 
     def launch_subshell(self, shell_cls, args, *, prompt_display = None):
         """Launch a subshell.
@@ -107,6 +128,12 @@ class Shell(object):
             args: Arguments used to launch this subshell.
             prompt_display: The name of the subshell. The default, None, means
                 to use the shell_cls.__name__.
+
+        Returns:
+            'end': Inform the parent shell to keep exiting until the root shell
+                is reached.
+            False, None, or anything that are evaluated as False: Inform the
+                parent shell to stay in that parent shell.
         """
         # Save history of the current shell.
         readline.write_history_file(self.history_fname)
@@ -120,11 +147,15 @@ class Shell(object):
                 temp_dir = self._temp_dir,
         )
         # The subshell creates its own history context.
-        shell.cmdloop()
+        self.print_debug("Leave parent shell '{}'".format(self.prompt))
+        exit_directive = shell.cmdloop()
+        self.print_debug("Enter parent shell '{}': {}".format(self.prompt, exit_directive))
 
         # Restore history.
         readline.clear_history()
         readline.read_history_file(self.history_fname)
+
+        return 'end' if exit_directive == 'end' else False
 
     def cmdloop(self):
         """Repeatedly issue a prompt, accept input, parse an initial prefix
@@ -133,6 +164,12 @@ class Shell(object):
 
         The completer function, together with the history buffer, is saved and
         restored upon exit.
+
+        Returns:
+            'end': Inform the parent shell to to keep exiting until the root
+                shell is reached.
+            False, None, or anything that are evaluated as False: Exit this
+                shell, enter the parent shell.
 
         Shell history:
 
@@ -163,6 +200,8 @@ class Shell(object):
             The old completer delimiters are saved before the loop and restored
             after the loop ends. This is to keep the environment clean.
         """
+        self.print_debug("Enter subshell '{}'".format(self.prompt))
+
         # Save the completer function, the history buffer, and the
         # completer_delims.
         old_completer = readline.get_completer()
@@ -170,27 +209,42 @@ class Shell(object):
         if os.path.isfile(self.history_fname):
             readline.read_history_file(self.history_fname)
         old_delims = readline.get_completer_delims()
-        new_delims = ''.join(list(set(old_delims) - set(Shell._special_delims)))
+        new_delims = ''.join(list(set(old_delims) - set(Shell._non_delims)))
         readline.set_completer_delims(new_delims)
 
         # Load the new completer function and start a new history buffer.
-        readline.set_completer(self._completer)
+        readline.set_completer(self._driver_completer)
 
         # main loop
         try:
-            stop = False
-            while not stop:
+            # The exit_directive could be one { True, False, 'end' }.
+            #       True:   Leave this shell, enter the parent shell.
+            #       False:  Continue with the loop.
+            #       'end':  Exit to the root shell.
+            # TODO: For the above logic, the if-elif statements in the while
+            # loop seems a bit convoluted.  Maybe it could be cleaner.
+            exit_directive = False
+            while True:
+                if exit_directive == 'end':
+                    if self._mode_stack:
+                        break
+                elif exit_directive == True:
+                    break
                 try:
                     line = input(self.prompt).strip()
                 except EOFError:
                     line = Shell.EOF
-                stop = self._onecmd(line)
+                exit_directive = self._onecmd(line)
         finally:
             # Restore the completer function, save the history, and restore old
             # delims.
             readline.set_completer(old_completer)
             readline.write_history_file(self.history_fname)
             readline.set_completer_delims(old_delims)
+
+        self.print_debug("Leave subshell '{}': {}".format(self.prompt, exit_directive))
+
+        return exit_directive
 
     def _parse_line(self, line):
         """Parse a line of input.
@@ -247,6 +301,11 @@ class Shell(object):
         func = getattr(self, func_name)
         return func(args)
 
+    @command('end')
+    def _do_end(self, args):
+        """Exit to the root shell."""
+        return 'end'
+
     @command('exec')
     def _do_exec(self, args):
         """Execute a command using subprocess.Popen()."""
@@ -278,39 +337,36 @@ class Shell(object):
         with open(self.history_fname, 'r', encoding = 'utf8') as f:
             self.stdout.write(f.read())
 
-    def _completer(self, text, state):
+    def _driver_completer(self, text, state):
         """Driver level completer function of this shell.
 
         The interface of this method is defined the readline library.
+
+        If the command ends with '?', invoke the help method, __help(), to
+        provide most relevant help messages and valid candidates.
+
+        If the command does not end with '?', invoke the actual completer
+        method, __complete().
 
         Arguments:
             text: A string, that is the current completion scope.
             state: An integer.
 
         Returns:
-            A string used to replace the given text.
+            A string used to replace the given text, if any.
+            None if no completion candidates are found.
         """
-        if state == 0:
-            origline = readline.get_line_buffer()
-            line = origline.lstrip()
-            offset = len(origline) - len(line)
-            begidx = readline.get_begidx() - offset
-            endidx = readline.get_endidx() - offset
-            # If the current scope is the first token in the line. Leading '?'
-            # is converted to 'help'. Leading '!' is converted to 'exec'.
-            if begidx == 0:
-                if text == '?':
-                    return 'help'
-                elif text == '!':
-                    return 'exec'
-                else: # Otherwise try to match the prefix of available commands.
-                    self._completion_matches = \
-                            self.__complete_cmds(text)
-            else:
-                self._completion_macthes = []
-                return None
-
-        return self._completion_matches[state]
+        origline = readline.get_line_buffer()
+        line = origline.lstrip()
+        offset = len(origline) - len(line)
+        begidx = readline.get_begidx() - offset
+        endidx = readline.get_endidx() - offset
+        if begidx == 0:
+            return self.__complete_cmds(text)[state]
+        else:
+            # TODO: Complete for general cases.
+            return None
 
     def __complete_cmds(self, text):
+        """Get the list of commands whose names start with a given text."""
         return [ name for name in self._cmd_map.keys() if name.startswith(text) ]
