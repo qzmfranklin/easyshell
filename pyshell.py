@@ -510,8 +510,8 @@ class Shell(object):
                         itself, is not included.
                     text: The scope of text being replaced.
 
-                    A few examples, with '$' as the shell prompt and '|'
-                    represents the cursor position:
+                    A few examples, with '$' representing the shell prompt and
+                    '|' represents the cursor position:
                             $ |
                             $ history|
                                 handled by the __driver_completer() method

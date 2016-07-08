@@ -57,10 +57,20 @@ class MyShell(pyshell.Shell):
     def do_hello(self, args):
         print('Hello world!')
 
-    # Add helper method for 'foo' and 'fsh' commands.
+    # Add helper method for 'foo' and 'fsh' commands. The interface is detailed
+    # in the doc string of the Shell.__driver_helper() method.
     @pyshell.helper('foo', 'fsh')
     def help_foo(self, args_ignored):
-        return 'foo,fsh         Enter the foo-prompt subshell'
+        return 'foo (--all|--no), fsh         Enter the foo-prompt subshell'
+
+    # Add completer method for 'foo'. The interface is detailed in the doc
+    # string of the Shell.__driver_completer() method.
+    @pyshell.completer('foo')
+    def complete_foo(self, args, text):
+        if args:
+            return
+        return [ x for x in { '--all', '--no' } \
+                if x.startswith(text) ]
 
 
 if __name__ == '__main__':
