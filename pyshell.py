@@ -113,11 +113,8 @@ class Shell(object):
     Get help:
             <TAB>               display all valid commands
             ?<TAB>              display this message
-            {help|?}<CR>        display this message
-            {help|?} <command>  display high level help message about <command>
-            <command> [args]?<TAB>
-                                display help message for the incomplete command:
-                                    <command> [args]
+            ?<CR>               display this message
+            <command>?<TAB>     display help message for the incomplete command
     """
 
     class _Mode(object):
@@ -351,17 +348,6 @@ class Shell(object):
     def _do_exit(self, args):
         """Exit this shell. Same as C-D."""
         return True
-
-    # @command('help')
-    # def _do_help(self, args):
-        # """Print help messages most relevant to the current line."""
-        # if not args:
-            # self.stdout.write(self.doc_string())
-            # self.stdout.write('\n')
-            # sys.stdout.flush()
-        # else:
-            # # TODO: use registered helper function.
-            # pass
 
     @command('history')
     def _do_history(self, args):
