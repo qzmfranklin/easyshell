@@ -1,9 +1,11 @@
 """A generic class to build line-oriented command interpreters.
 """
 
+import argparse
 import os
 import readline
 import shlex
+import shutil
 import string
 import subprocess
 import sys
@@ -237,7 +239,10 @@ class Shell(object):
         return 'end' if exit_directive == 'end' else False
 
     def cmdloop(self):
-        """Start the interactive shell.
+        """Start the main loop of the interactive shell.
+
+        The preloop() and postloop() methods are always run before and after the
+        main loop, respectively.
 
         Returns:
             'end': Inform the parent shell to to keep exiting until the root
@@ -299,6 +304,7 @@ class Shell(object):
             # TODO: For the above logic, the if-elif statements in the while
             # loop seems a bit convoluted.  Maybe it could be cleaner.
             exit_directive = False
+            self.preloop()
             while True:
                 if exit_directive == 'end':
                     if self._mode_stack:
@@ -311,6 +317,7 @@ class Shell(object):
                     line = Shell.EOF
                 exit_directive = self.__exec_cmd(line)
         finally:
+            self.postloop()
             # Restore the completer function, save the history, and restore old
             # delims.
             readline.set_completer(old_completer)
@@ -320,6 +327,12 @@ class Shell(object):
         self.print_debug("Leave subshell '{}': {}".format(self.prompt, exit_directive))
 
         return exit_directive
+
+    def preloop(self):
+        pass
+
+    def postloop(self):
+        pass
 
     @command('end')
     def _do_end(self, args):
@@ -352,15 +365,20 @@ class Shell(object):
 
     @command('history')
     def _do_history(self, args):
-        """Dump the history in this shell.
+        """\
+        Display history.
 
-        A side effect is that this method flushes the current history buffer to
-        the history file, whose file name is given by the history_fname
-        property.
+            history             Display history.
+            history clear       Clear history.
+            history clearall    Clear history for all shells.
         """
         if args and args[0] == 'clear':
             readline.clear_history()
             readline.write_history_file(self.history_fname)
+        elif args and args[0] == 'clearall':
+            readline.clear_history()
+            shutil.rmtree(self._temp_dir, ignore_errors = True)
+            os.makedirs(os.path.join(self._temp_dir, 'history'))
         else:
             readline.write_history_file(self.history_fname)
             with open(self.history_fname, 'r', encoding = 'utf8') as f:
@@ -368,18 +386,17 @@ class Shell(object):
 
     @helper('history')
     def _help_history(self, args_ignored):
-        return textwrap.dedent('''\
-                history             Display history
-                history clear       Clear history
-                ''')
+        cmd_name = self._cmd_map['history']
+        cmd_method = getattr(self, cmd_name)
+        return textwrap.dedent(cmd_method.__doc__)
 
     @completer('history')
     def _complete_history(self, args, text):
         """Find candidates for the 'history' command."""
         if args:
             return
-        if 'clear'.startswith(text):
-            return [ 'clear' ]
+        return [ x for x in { 'clear', 'clearall' } \
+                if x.startswith(text) ]
 
     def __parse_line(self, line):
         """Parse a line of input.
