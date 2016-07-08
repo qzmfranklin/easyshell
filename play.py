@@ -14,9 +14,12 @@ class KarShell(pyshell.Shell):
     pass
 
 class FooShell(pyshell.Shell):
+
+    # 'kar' enters a subshell with a prompt string that depends on the
+    # arguments.
     @pyshell.subshell(KarShell, 'kar')
     def do_kar(self, args):
-        return 'karPROMPT'
+        return 'karPROMPT' + '@'.join(args)
 
 class BarShell(pyshell.Shell):
     pass
@@ -31,30 +34,30 @@ class MyShell(pyshell.Shell):
 
     # 'foo' and 'fsh' enters the FooShell with prompt 'foo-prompt'.
     @pyshell.subshell(FooShell, 'foo', 'fsh')
-    def do_foo(self, args):
+    def do_foo(self, args_ignored):
         return 'foo-prompt'
 
     # 'bar' enters the BarShell with prompt 'BarPrompt'.
     @pyshell.command('bar')
     @pyshell.subshell(BarShell)
-    def do_bar(self, args):
+    def do_bar(self, args_ignored):
         return 'BarPrompt'
 
     # The same Shell class, KarShell, can be freely reused.
     @pyshell.subshell(KarShell, 'kar0')
-    def do_kar(self, args):
+    def do_kar(self, args_ignored):
         return 'kar0'
 
     # If this command is called, enters the FooShell. But this command does not
     # directly correspond to any commands.
     @pyshell.subshell(FooShell)
-    def print_and_launch_fsh(self, args):
+    def print_and_launch_fsh(self, args_ignored):
         print('Launch the FooShell manually.')
 
     # 'hello', 'hi', and 'Ha--lo' print 'Hello world!' but does not enter any
     # subshell. Note that the help message, by default, is just the doc string.
     @pyshell.command('hello', 'hi', 'Ha--lo')
-    def do_hello(self, args):
+    def do_hello(self, args_ignored):
         """Print 'Hello world!'."""
         print('Hello world!')
 
