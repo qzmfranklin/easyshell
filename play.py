@@ -7,6 +7,10 @@ import pyshell
 
 # The subshell classes must be defined before being referenced.
 class KarShell(pyshell.Shell):
+    """The KarShell.
+
+    This message shows up when you type 'help'
+    """
     pass
 
 class FooShell(pyshell.Shell):
@@ -18,6 +22,7 @@ class BarShell(pyshell.Shell):
     pass
 
 class MyShell(pyshell.Shell):
+
     # 'foo' and 'fsh' enters the FooShell with prompt 'foo-prompt'.
     @pyshell.subshell(FooShell, 'foo', 'fsh')
     def do_foo(self, args):
@@ -46,9 +51,21 @@ class MyShell(pyshell.Shell):
     def do_hello(self, args):
         print('Hello world!')
 
-    # @pyshell.helper('foo', 'fsh')
-    # def help_foo(origline, fp):
-        # pass
+    # Add helper method for 'foo' and 'fsh' commands.
+    @pyshell.helper('foo', 'fsh')
+    def help_foo(self, args_ignored):
+        return 'foo,fsh         enter the foo-prompt subshell'
+
 
 if __name__ == '__main__':
-    MyShell(debug = True).cmdloop()
+
+    MyShell(
+            # Supply a custom root prompt.
+            root_prompt = 'PlayBoy',
+
+            # Supply a directory name to have persistent history.
+            temp_dir = '/tmp/pyshell',
+
+            # Debug mode prints debug information to self.stderr.
+            debug = False,
+    ).cmdloop()

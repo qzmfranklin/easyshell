@@ -123,14 +123,16 @@ class Shell(object):
     def __init__(self, *,
             debug = False,
             mode_stack = [],
+            root_prompt = 'root',
             stdout = sys.stdout,
             stderr = sys.stderr,
-            root_prompt = 'root',
             temp_dir = None):
         """Instantiate a line-oriented interpreter framework.
 
         Arguments:
+            debug: If True, print_debug() prints to self.stderr.
             mode_stack: A stack of Shell._Mode objects.
+            root_prompt: The root prompt.
             stdout, stderr: The file objects to write to for output and error.
             temp_dir: The temporary directory to save history files. The default
                 value, None, means to generate such a directory.
@@ -263,6 +265,7 @@ class Shell(object):
         shell = shell_cls(
                 debug = self.debug,
                 mode_stack = self._mode_stack + [ mode ],
+                root_prompt = self.root_prompt,
                 stdout = self.stdout,
                 stderr = self.stderr,
                 temp_dir = self._temp_dir,
@@ -322,8 +325,6 @@ class Shell(object):
         # Save the completer function, the history buffer, and the
         # completer_delims.
         old_completer = readline.get_completer()
-        if os.path.isfile(self.history_fname):
-            readline.read_history_file(self.history_fname)
         old_delims = readline.get_completer_delims()
         new_delims = ''.join(list(set(old_delims) - set(Shell._non_delims)))
         readline.set_completer_delims(new_delims)
@@ -331,6 +332,8 @@ class Shell(object):
         # Load the new completer function and start a new history buffer.
         readline.set_completer(self.__driver_completer)
         readline.clear_history()
+        if os.path.isfile(self.history_fname):
+            readline.read_history_file(self.history_fname)
 
         # main loop
         try:
