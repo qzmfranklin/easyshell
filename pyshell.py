@@ -4,6 +4,7 @@
 import os
 import readline
 import shlex
+import string
 import subprocess
 import sys
 import tempfile
@@ -24,11 +25,13 @@ def command(*commands):
         return f
     return decorated_func
 
+
 # The naming convention is same as the inspect module, which has such predicate
 # methods as isfunction, isclass, ismethod, etc..
 def iscommand(f):
     """Is the function object a command or not."""
     return hasattr(f, '__command__')
+
 
 def helper(*commands):
     """Decorate a function to be the helper function of commands.
@@ -41,9 +44,11 @@ def helper(*commands):
         return f
     return decorated_func
 
+
 def ishelper(f):
     """Is the function object a completer function or not."""
     return hasattr(f, '__help_targets__')
+
 
 def completer(*commands):
     """Decorate a function to be the completer function of commands.
@@ -56,9 +61,11 @@ def completer(*commands):
         return f
     return decorated_func
 
+
 def iscompleter(f):
     """Is the function object a completer function or not."""
-    return hasattr(f, '__help_complete__')
+    return hasattr(f, '__complete_targets__')
+
 
 # A parametrized decorator decorating a method is very tricky. To fully
 # understand, please first consult this thread:
@@ -84,6 +91,7 @@ def subshell(shell_cls, *commands):
         inner_func.__name__ = f.__name__
         return command(*commands)(inner_func) if commands else inner_func
     return decorated_func
+
 
 class Shell(object):
 
@@ -151,73 +159,21 @@ class Shell(object):
         self._helper_map = self.__build_helper_map()
         self._completer_map = self.__build_completer_map()
 
-    def __build_cmd_map(self):
-        """Build a mapping from command names to method names.
+    @classmethod
+    def doc_string(cls):
+        """Get the doc string of this class.
 
-        One command name maps to at most one method.
-        Multiple command names can map to the same method.
+        If this class does not have a doc string or the doc string is empty, try
+        its base classes until the root base class, Shell, is reached.
 
-        Only used by __init__() to initialize self._cmd_map. MUST NOT be used
-        elsewhere.
+        CAVEAT:
+            This method assumes that this class and all its super classes are
+            derived from Shell or object.
         """
-        ret = {}
-        for name in dir(self):
-            obj = getattr(self, name)
-            if iscommand(obj):
-                for cmd in obj.__command__:
-                    ret[cmd] = obj.__name__
-        return ret
-
-    def __build_helper_map(self):
-        """Build a mapping from command names to helper names.
-
-        One command name maps to at most one helper method.
-        Multiple command names can map to the same helper method.
-
-        Only used by __init__() to initialize self._cmd_map. MUST NOT be used
-        elsewhere.
-
-        Raises:
-            PyShellError: A command maps to multiple helper methods.
-        """
-        ret = {}
-        for name in dir(self):
-            obj = getattr(self, name)
-            if ishelper(obj):
-                for cmd in obj.__help_targets__:
-                    if cmd in ret.keys():
-                        raise PyShellError("The command '{}' already has helper"
-                                           " method '{}', cannot register a"
-                                           " second method '{}'.".format( \
-                                                    cmd, ret[cmd], obj.__name__))
-                    ret[cmd] = obj.__name__
-        return ret
-
-    def __build_completer_map(self):
-        """Build a mapping from command names to completer names.
-
-        One command name maps to at most one completer method.
-        Multiple command names can map to the same completer method.
-
-        Only used by __init__() to initialize self._cmd_map. MUST NOT be used
-        elsewhere.
-
-        Raises:
-            PyShellError: A command maps to multiple helper methods.
-        """
-        ret = {}
-        for name in dir(self):
-            obj = getattr(self, name)
-            if iscompleter(obj):
-                for cmd in obj.__complete_targets__:
-                    if cmd in ret.keys():
-                        raise PyShellError("The command '{}' already has"
-                                           " complter"
-                                           " method '{}', cannot register a"
-                                           " second method '{}'.".format( \
-                                                    cmd, ret[cmd], obj.__name__))
-                    ret[cmd] = obj.__name__
-        return ret
+        clz = cls
+        while not clz.__doc__:
+            clz = clz.__bases__[0]
+        return clz.__doc__
 
     @property
     def prompt(self):
@@ -329,7 +285,7 @@ class Shell(object):
         readline.set_completer_delims(new_delims)
 
         # Load the new completer function and start a new history buffer.
-        readline.set_completer(self.__driver_completer)
+        readline.set_completer(self.__stub_completer)
         readline.clear_history()
         if os.path.isfile(self.history_fname):
             readline.read_history_file(self.history_fname)
@@ -364,66 +320,6 @@ class Shell(object):
         self.print_debug("Leave subshell '{}': {}".format(self.prompt, exit_directive))
 
         return exit_directive
-
-    def _parse_line(self, line):
-        """Parse a line of input.
-
-        '?'     => help
-        '!'     => shell
-        C-D     => exit, insert 'exit\\n' to the command line.
-        other   => other commands
-
-        The input line is tokenized using the same rules as the way bash shell
-        tokenizes inputs. All quoting and escaping rules from the bash shell
-        apply here too.
-
-        Arguments:
-            line: A string, representing a line of input from the shell. This
-                string is preprocessed by cmdloop() to convert the EOF character
-                to '\\x04', i.e., 'D' - 64, if the EOF character is the only
-                character from the shell.
-
-        Returns:
-            A tuple (cmd, args) where args is a list of strings. If the input
-            line has only a single EOF character '\\x04', return ( 'exit', [] ).
-        """
-        if line == Shell.EOF:
-            # This is a hack to allow the EOF character to behave exactly like
-            # typing the 'exit' command.
-            readline.insert_text('exit\n')
-            readline.redisplay()
-            return ( 'exit', [] )
-
-        toks = shlex.split(line.strip())
-        if len(toks) == 0:
-            return ( '', [] )
-
-        cmd = toks[0]
-        if cmd == '?':
-            cmd = 'help'
-        elif cmd == '!':
-            cmd = 'exec'
-
-        return ( cmd, [] if len(toks) == 1 else toks[1:] )
-
-    def __exec_cmd(self, line):
-        """Execute a command.
-
-        emptyline: no-op
-        unknown command: print error message
-        known command: invoke the corresponding method
-        """
-        if not line:
-            return
-
-        cmd, args = self._parse_line(line)
-        if not cmd in self._cmd_map.keys():
-            self.stderr.write("{}: command not found\n".format(cmd))
-            return
-
-        func_name = self._cmd_map[cmd]
-        func = getattr(self, func_name)
-        return func(args)
 
     @command('end')
     def _do_end(self, args):
@@ -477,8 +373,80 @@ class Shell(object):
                 history clear       Clear history
                 ''')
 
-    def __driver_completer(self, text, state):
-        """Display help messages and complete.
+    @completer('history')
+    def _complete_history(self, args, text):
+        """Find candidates for the 'history' command."""
+        if args:
+            return
+        if 'clear'.startswith(text):
+            return [ 'clear' ]
+
+    def __parse_line(self, line):
+        """Parse a line of input.
+
+        '?'     => help
+        '!'     => shell
+        C-D     => exit, insert 'exit\\n' to the command line.
+        other   => other commands
+
+        The input line is tokenized using the same rules as the way bash shell
+        tokenizes inputs. All quoting and escaping rules from the bash shell
+        apply here too.
+
+        Arguments:
+            line: A string, representing a line of input from the shell. This
+                string is preprocessed by cmdloop() to convert the EOF character
+                to '\\x04', i.e., 'D' - 64, if the EOF character is the only
+                character from the shell.
+
+        Returns:
+            A tuple (cmd, args) where args is a list of strings. If the input
+            line has only a single EOF character '\\x04', return ( 'exit', [] ).
+        """
+        if line == Shell.EOF:
+            # This is a hack to allow the EOF character to behave exactly like
+            # typing the 'exit' command.
+            readline.insert_text('exit\n')
+            readline.redisplay()
+            return ( 'exit', [] )
+
+        toks = shlex.split(line.strip())
+        if len(toks) == 0:
+            return ( '', [] )
+
+        cmd = toks[0]
+        if cmd == '?':
+            cmd = 'help'
+        elif cmd == '!':
+            cmd = 'exec'
+
+        return ( cmd, [] if len(toks) == 1 else toks[1:] )
+
+    def __exec_cmd(self, line):
+        """Execute a command.
+
+        emptyline: no-op
+        unknown command: print error message
+        known command: invoke the corresponding method
+        """
+        if not line:
+            return
+
+        cmd, args = self.__parse_line(line)
+        if not cmd in self._cmd_map.keys():
+            self.stderr.write("{}: command not found\n".format(cmd))
+            return
+
+        func_name = self._cmd_map[cmd]
+        func = getattr(self, func_name)
+        return func(args)
+
+    def __stub_completer(self, text, state):
+        """Display help messages or invoke the proper completer.
+
+        The interface of helper methods and completer methods are documented in
+        the __driver_completer() method and the __driver_helper() method,
+        respectively.
 
         Arguments:
             text: A string, that is the current completion scope.
@@ -489,76 +457,85 @@ class Shell(object):
             None if no completion candidates are found.
 
         Raises:
-            As this function is called via the readline complete callback, any
-            errors and exceptions are silently ignored.
-
-        Ideally, a seperate callback method, __get_help_message() should be
-        registered with the readline library to be triggered with the '?'
-        character. That would give the user a very convenient and clean way of
-        displaying the most relevant help messages, i.e., entering '?' shows
-        help messages without changing the line buffer.
-
-        Unfortunately, the python readline library does not expose such an
-        interface for us.
-
-        Given this restriction, here is what I have decided to do:
-          - The user types the '?' character *and* hit tab to display
-            help messages.
-          - The '?' character + tab only triggers the display of help messages
-            when the '?' character is the last non-whitespace character in the
-            line buffer.
-          - If the '?' character is the leading non-whitespace character in the
-            line buffer, it is interpreted as the 'help' command.
-          - If '?' is the only non-whitespace character, display self.__doc__,
-          - If a '?' character is neither the leading nor the trailing
-            non-whitespace character, it is treated as part of the arguments.
-          - The trailing non-whitespace '?' character persists after the help
-            messages are displayed.
+            This method is called via the readline callback. If this method
+            raises an error, it is silently ignored by the readline library.
+            This behavior makes debugging very difficult. For this reason,
+            non-driver methods are run within try-except blocks. When an error
+            occurs, the stack trace is printed to self.stderr.
         """
         origline = readline.get_line_buffer()
-
-        # If the line ends with '?', instead of looking for completion
-        # candidates, display help messages.
         line = origline.lstrip()
         if line and line[-1] == '?':
             self.__driver_helper(line)
-            return
+        else:
+            toks = shlex.split(line)
+            return self.__driver_completer(toks, text, state)
 
-        # Try to complete the line.
-        line = origline.lstrip()
-        offset = len(origline) - len(line)
-        begidx = readline.get_begidx() - offset
-        endidx = readline.get_endidx() - offset
-        try:
-            if begidx == 0:
-                # If the line is empty, list all commands.
-                return self.__complete_cmds(text)[state]
-            else:
-                # TODO: Otherwise, try the completer method registered with the command.
-                return
-        except IndexError:
-            pass
-        except:
-            self.stderr.write('\n')
-            self.stderr.write(traceback.format_exc())
+    def __driver_completer(self, toks, text, state):
+        """Driver level completer.
 
-    @classmethod
-    def doc_string(cls):
-        """Get the doc string of this class.
+        Arguments:
+            toks: A list of tokens, tokenized from the original input line.
+            text: A string, the text to be replaced if a completion candidate is chosen.
+            state: An integer, the index of the candidate out of the list of candidates.
 
-        If this class does not have a doc string or the doc string is empty, try
-        its base classes until the root base class, Shell, is reached.
+        Returns:
+            A string, the candidate.
 
-        CAVEAT:
-            This method assumes that this class and all its super classes are
-            derived from Shell or object.
+        ------------------------------
+        Interface of completer methods:
+
+            @completer('some-other_command')
+            def complete_foo(self, args, text):
+                '''
+                Arguments:
+                    args: A list of arguments. The first token, i.e, the command
+                        itself, is not included.
+                    text: The scope of text being replaced.
+
+                    A few examples, with '$' as the shell prompt and '|'
+                    represents the cursor position:
+                            $ |
+                            $ history|
+                                handled by the __driver_completer() method
+                            $ history |
+                                args = []
+                                text = ''
+                            $ history cle|
+                                args = []
+                                text = 'cle'
+                            $ history clear |
+                                args = ['clear']
+                                text = ''
+
+                Returns:
+                    A list of candidates. If no candidate was found, return
+                    either [] or None.
+                '''
+                pass
         """
-        clz = cls
-        while not clz.__doc__:
-            clz = clz.__bases__[0]
-        return clz.__doc__
+        # If the line is empty or the user is still inputing the first token,
+        # complete with available commands.
+        if not toks or (len(toks) == 1 and text):
+            candidates = self.__complete_cmds(text)
+            return candidates[state]
 
-    def __complete_cmds(self, text = ''):
+        # Otherwise, try to complete with the registered completer method.
+        cmd = toks[0]
+        args = toks[1:] if len(toks) > 1 else None
+        if text and args:
+            del args[-1]
+        if cmd in self._completer_map.keys():
+            completer_name = self._completer_map[cmd]
+            completer_method = getattr(self, completer_name)
+            try:
+                candidates = completer_method(args, text)
+            except:
+                self.stderr.write('\n')
+                self.stderr.write(traceback.format_exc())
+        return candidates[state]
+
+    def __complete_cmds(self, text):
         """Get the list of commands whose names start with a given text."""
         return [ name for name in self._cmd_map.keys() if name.startswith(text) ]
 
@@ -575,6 +552,20 @@ class Shell(object):
         Raises:
             Errors from helper methods print stack trace without terminating
             this shell. Other exceptions will terminate this shell.
+
+        ---------------------------
+        Interface of helper methods:
+
+            @helper('some-command')
+            def help_foo(self, args):
+                '''
+                Arguments:
+                    args: A list of arguments.
+
+                Returns:
+                    A string that is the help message.
+                '''
+                pass
         """
         if line.strip() == '?':
             self.stdout.write('\n')
@@ -621,4 +612,79 @@ class Shell(object):
             return textwrap.dedent('''\
                             No help message is found for:
                             {}
-                            '''.format(textwrap.indent(subprocess.list2cmdline(toks), '    ')))
+                            '''.format(textwrap.indent(
+                                subprocess.list2cmdline(toks), '    ')))
+
+    ################################################################################
+    # __build_XXX_map() methods are only used by the __init__() method.
+    # TODO: The internal logic looks so similar. Should consider merging these
+    # methods.
+    ################################################################################
+
+    def __build_cmd_map(self):
+        """Build a mapping from command names to method names.
+
+        One command name maps to at most one method.
+        Multiple command names can map to the same method.
+
+        Only used by __init__() to initialize self._cmd_map. MUST NOT be used
+        elsewhere.
+        """
+        ret = {}
+        for name in dir(self):
+            obj = getattr(self, name)
+            if iscommand(obj):
+                for cmd in obj.__command__:
+                    ret[cmd] = obj.__name__
+        return ret
+
+    def __build_helper_map(self):
+        """Build a mapping from command names to helper names.
+
+        One command name maps to at most one helper method.
+        Multiple command names can map to the same helper method.
+
+        Only used by __init__() to initialize self._cmd_map. MUST NOT be used
+        elsewhere.
+
+        Raises:
+            PyShellError: A command maps to multiple helper methods.
+        """
+        ret = {}
+        for name in dir(self):
+            obj = getattr(self, name)
+            if ishelper(obj):
+                for cmd in obj.__help_targets__:
+                    if cmd in ret.keys():
+                        raise PyShellError("The command '{}' already has helper"
+                                           " method '{}', cannot register a"
+                                           " second method '{}'.".format( \
+                                                    cmd, ret[cmd], obj.__name__))
+                    ret[cmd] = obj.__name__
+        return ret
+
+    def __build_completer_map(self):
+        """Build a mapping from command names to completer names.
+
+        One command name maps to at most one completer method.
+        Multiple command names can map to the same completer method.
+
+        Only used by __init__() to initialize self._cmd_map. MUST NOT be used
+        elsewhere.
+
+        Raises:
+            PyShellError: A command maps to multiple helper methods.
+        """
+        ret = {}
+        for name in dir(self):
+            obj = getattr(self, name)
+            if iscompleter(obj):
+                for cmd in obj.__complete_targets__:
+                    if cmd in ret.keys():
+                        raise PyShellError("The command '{}' already has"
+                                           " complter"
+                                           " method '{}', cannot register a"
+                                           " second method '{}'.".format( \
+                                                    cmd, ret[cmd], obj.__name__))
+                    ret[cmd] = obj.__name__
+        return ret
