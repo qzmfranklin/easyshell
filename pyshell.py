@@ -470,6 +470,13 @@ class Shell(object):
             with open(self.history_fname, 'r', encoding = 'utf8') as f:
                 self.stdout.write(f.read())
 
+    @helper('history')
+    def _help_history(self, args_ignored):
+        return textwrap.dedent('''\
+                history             Display history
+                history clear       Clear history
+                ''')
+
     def __driver_completer(self, text, state):
         """Display help messages and complete.
 
@@ -558,11 +565,16 @@ class Shell(object):
     def __driver_helper(self, line):
         """Driver level helper method.
 
-        Display help message for the given input. Internally calls
-        self.__get_help_message().
+        1.  Display help message for the given input. Internally calls
+            self.__get_help_message() to obtain the help message.
+        2.  Re-display the prompt and the input line.
 
         Arguments:
             line: The input line.
+
+        Raises:
+            Errors from helper methods print stack trace without terminating
+            this shell. Other exceptions will terminate this shell.
         """
         if line.strip() == '?':
             self.stdout.write('\n')
@@ -610,10 +622,3 @@ class Shell(object):
                             No help message is found for:
                             {}
                             '''.format(textwrap.indent(subprocess.list2cmdline(toks), '    ')))
-
-    @helper('history')
-    def _help_history(self, args_ignored):
-        return textwrap.dedent('''\
-                history             Display history
-                history clear       Clear history
-                ''')
