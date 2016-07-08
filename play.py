@@ -46,5 +46,9 @@ class MyShell(pyshell.Shell):
     def do_hello(self, args):
         print('Hello world!')
 
+    # @pyshell.helper('foo', 'fsh')
+    # def help_foo(origline, fp):
+        # pass
+
 if __name__ == '__main__':
-    MyShell().cmdloop()
+    MyShell(debug = True).cmdloop()
