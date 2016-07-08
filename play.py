@@ -54,7 +54,7 @@ class MyShell(pyshell.Shell):
     # Add helper method for 'foo' and 'fsh' commands.
     @pyshell.helper('foo', 'fsh')
     def help_foo(self, args_ignored):
-        return 'foo,fsh         enter the foo-prompt subshell'
+        return 'foo,fsh         Enter the foo-prompt subshell'
 
 
 if __name__ == '__main__':

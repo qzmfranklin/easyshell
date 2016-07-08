@@ -146,7 +146,6 @@ class Shell(object):
         os.makedirs(os.path.join(self._temp_dir, 'history'), exist_ok = True)
 
         readline.parse_and_bind('tab: complete')
-        readline.parse_and_bind('set colored-stats on')
 
         self._cmd_map = self.__build_cmd_map()
         self._helper_map = self.__build_helper_map()
@@ -486,7 +485,7 @@ class Shell(object):
             As this function is called via the readline complete callback, any
             errors and exceptions are silently ignored.
 
-        Ideally, a seperate callback method, __dispatch_helper() should be
+        Ideally, a seperate callback method, __get_help_message() should be
         registered with the readline library to be triggered with the '?'
         character. That would give the user a very convenient and clean way of
         displaying the most relevant help messages, i.e., entering '?' shows
@@ -515,25 +514,7 @@ class Shell(object):
         # candidates, display help messages.
         line = origline.lstrip()
         if line and line[-1] == '?':
-            if state == 0:
-                if line.strip() == '?':
-                    self.stdout.write('\n')
-                    self.stdout.write(self.doc_string())
-                else:
-                    toks = shlex.split(origline[:-1])
-                    try:
-                        msg = self.__dispatch_helper(toks)
-                    except Exception as e:
-                        self.stderr.write('\n')
-                        self.stderr.write(traceback.format_exc())
-                        self.stderr.flush()
-                    self.stdout.write('\n')
-                    self.stdout.write(msg)
-                # Restore the prompt and the original input.
-                self.stdout.write('\n')
-                self.stdout.write(self.prompt)
-                self.stdout.write(origline)
-                self.stdout.flush()
+            self.__driver_helper(line)
             return
 
         # Try to complete the line.
@@ -574,16 +555,38 @@ class Shell(object):
         """Get the list of commands whose names start with a given text."""
         return [ name for name in self._cmd_map.keys() if name.startswith(text) ]
 
-    def __dispatch_helper(self, toks):
+    def __driver_helper(self, line):
+        """Driver level helper method.
+
+        Display help message for the given input. Internally calls
+        self.__get_help_message().
+
+        Arguments:
+            line: The input line.
+        """
+        if line.strip() == '?':
+            self.stdout.write('\n')
+            self.stdout.write(self.doc_string())
+        else:
+            toks = shlex.split(line[:-1])
+            try:
+                msg = self.__get_help_message(toks)
+            except Exception as e:
+                self.stderr.write('\n')
+                self.stderr.write(traceback.format_exc())
+                self.stderr.flush()
+            self.stdout.write('\n')
+            self.stdout.write(msg)
+        # Restore the prompt and the original input.
+        self.stdout.write('\n')
+        self.stdout.write(self.prompt)
+        self.stdout.write(line)
+        self.stdout.flush()
+
+    def __get_help_message(self, toks):
         """Write help message to file.
 
-        Driver level helper method.
-
-        If no helper method is found, here is an example output:
-                (root)$ fo?<TAB>
-                No help message is found for:
-                    fo
-                (root)$ fo?
+        Only called by the __driver_helper() method.
 
         Arguments:
             toks: The list of command followed by its arguments.
@@ -611,6 +614,6 @@ class Shell(object):
     @helper('history')
     def _help_history(self, args_ignored):
         return textwrap.dedent('''\
-                history             display history
-                history clear       clear history
+                history             Display history
+                history clear       Clear history
                 ''')
