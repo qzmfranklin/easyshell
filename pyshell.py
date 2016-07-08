@@ -352,16 +352,16 @@ class Shell(object):
         """Exit this shell. Same as C-D."""
         return True
 
-    @command('help')
-    def _do_help(self, args):
-        """Print help messages most relevant to the current line."""
-        if not args:
-            self.stdout.write(self.doc_string())
-            self.stdout.write('\n')
-            sys.stdout.flush()
-        else:
-            # TODO: use registered helper function.
-            pass
+    # @command('help')
+    # def _do_help(self, args):
+        # """Print help messages most relevant to the current line."""
+        # if not args:
+            # self.stdout.write(self.doc_string())
+            # self.stdout.write('\n')
+            # sys.stdout.flush()
+        # else:
+            # # TODO: use registered helper function.
+            # pass
 
     @command('history')
     def _do_history(self, args):
@@ -401,11 +401,6 @@ class Shell(object):
     def __parse_line(self, line):
         """Parse a line of input.
 
-        '?'     => help
-        '!'     => shell
-        C-D     => exit, insert 'exit\\n' to the command line.
-        other   => other commands
-
         The input line is tokenized using the same rules as the way bash shell
         tokenizes inputs. All quoting and escaping rules from the bash shell
         apply here too.
@@ -432,9 +427,7 @@ class Shell(object):
             return ( '', [] )
 
         cmd = toks[0]
-        if cmd == '?':
-            cmd = 'help'
-        elif cmd == '!':
+        if cmd == '!':
             cmd = 'exec'
 
         return ( cmd, [] if len(toks) == 1 else toks[1:] )
@@ -608,6 +601,13 @@ class Shell(object):
 
         Only called by the __driver_helper() method.
 
+        Looks for the help message in the following order:
+
+            1.  The helper method registered with this command via the @helper
+                decorator.
+            2.  The doc string of the registered method.
+            3.  A default help message basically saying 'no help found'.
+
         Arguments:
             toks: The list of command followed by its arguments.
             fp: The file-like object to write help messages to.
@@ -625,12 +625,17 @@ class Shell(object):
             helper_method = getattr(self, helper_name)
             args = toks[1:] if len(toks) > 1 else []
             return helper_method(args)
-        else:
-            return textwrap.dedent('''\
-                            No help message is found for:
-                            {}
-                            '''.format(textwrap.indent(
-                                subprocess.list2cmdline(toks), '    ')))
+
+        if cmd in self._cmd_map.keys():
+            name = self._cmd_map[cmd]
+            method = getattr(self, name)
+            return method.__doc__
+
+        return textwrap.dedent('''\
+                       No help message is found for:
+                       {}
+                       '''.format(textwrap.indent(
+                           subprocess.list2cmdline(toks), '    ')))
 
     ################################################################################
     # __build_XXX_map() methods are only used by the __init__() method.

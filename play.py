@@ -52,9 +52,10 @@ class MyShell(pyshell.Shell):
         print('Launch the FooShell manually.')
 
     # 'hello', 'hi', and 'Ha--lo' print 'Hello world!' but does not enter any
-    # subshell.
+    # subshell. Note that the help message, by default, is just the doc string.
     @pyshell.command('hello', 'hi', 'Ha--lo')
     def do_hello(self, args):
+        """Print 'Hello world!'."""
         print('Hello world!')
 
     # Add helper method for 'foo' and 'fsh' commands. The interface is detailed
