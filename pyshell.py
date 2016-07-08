@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import traceback
 
 # Decorators with arguments is a little bit tricky to get right. A good
 # thread on it is:
@@ -28,6 +29,36 @@ def command(*commands):
 def iscommand(f):
     """Is the function object a command or not."""
     return hasattr(f, '__command__')
+
+def helper(*commands):
+    """Decorate a function to be the helper function of commands.
+
+    Arguments:
+        commands: Names of command that should trigger this function object.
+    """
+    def decorated_func(f):
+        f.__help_targets__ = list(commands)
+        return f
+    return decorated_func
+
+def ishelper(f):
+    """Is the function object a completer function or not."""
+    return hasattr(f, '__help_targets__')
+
+def completer(*commands):
+    """Decorate a function to be the completer function of commands.
+
+    Arguments:
+        commands: Names of command that should trigger this function object.
+    """
+    def decorated_func(f):
+        f.__complete_targets__ = list(commands)
+        return f
+    return decorated_func
+
+def iscompleter(f):
+    """Is the function object a completer function or not."""
+    return hasattr(f, '__help_complete__')
 
 # A parametrized decorator decorating a method is very tricky. To fully
 # understand, please first consult this thread:
@@ -58,28 +89,25 @@ class Shell(object):
 
     """Recursive interactive shell.
 
-    The shell uses the same lexing rule as the bash shell. Quoting and escapting
-    rules that apply to bash shell also apply here.
-
-    The shell has a few internal commands:
+    Exit shell:
             end                 exit to the root shell
-            exec, !             execute the command using subprocess.Popen
             exit, C-D           exit to the parent shell
-            history             display history
 
-    A few ways of getting help:
+    Manipulate history:
+            history             display history of this shell
+            history clear       clear history of this shell
+
+    Execute a command in the Linux shell:
+            ! <command>         execute <command> using subprocess.Popen
+
+    Get help:
+            <TAB>               display all valid commands
             ?<TAB>              display this message
+            {help|?}<CR>        display this message
             {help|?} <command>  display high level help message about <command>
             <command> [args]?<TAB>
                                 display help message for the incomplete command:
                                     <command> [args]
-
-    To override this help message, you need to override the __doc__ string when
-    deriving from the Shell class.
-
-    It is possible to enter a subshell via the launch_subshell() method, or
-    equivalently via the @subshell decorator function. A subshell has its own
-    history buffer, completion matches, commands, and everything.
     """
 
     class _Mode(object):
@@ -111,21 +139,22 @@ class Shell(object):
         self.stdout = stdout
         self.stderr = stderr
         self._mode_stack = mode_stack
-        self._prompt = '({})$ '.format('-'.join(
-                [ root_prompt ] + \
-                [ m.prompt_display for m in mode_stack ]))
+        self.root_prompt = root_prompt
         self._temp_dir = temp_dir if temp_dir else tempfile.mkdtemp()
         os.makedirs(os.path.join(self._temp_dir, 'history'), exist_ok = True)
 
         readline.parse_and_bind('tab: complete')
+        readline.parse_and_bind('set colored-stats on')
 
         self._cmd_map = self.__build_cmd_map()
+        self._helper_map = self.__build_helper_map()
+        self._completer_map = self.__build_completer_map()
 
     def __build_cmd_map(self):
-        """Build a mapping from commands to method names.
+        """Build a mapping from command names to method names.
 
-        One command maps to at most one method.
-        Multiple commands can map to the same method.
+        One command name maps to at most one method.
+        Multiple command names can map to the same method.
 
         Only used by __init__() to initialize self._cmd_map. MUST NOT be used
         elsewhere.
@@ -138,9 +167,62 @@ class Shell(object):
                     ret[cmd] = obj.__name__
         return ret
 
+    def __build_helper_map(self):
+        """Build a mapping from command names to helper names.
+
+        One command name maps to at most one helper method.
+        Multiple command names can map to the same helper method.
+
+        Only used by __init__() to initialize self._cmd_map. MUST NOT be used
+        elsewhere.
+
+        Raises:
+            PyShellError: A command maps to multiple helper methods.
+        """
+        ret = {}
+        for name in dir(self):
+            obj = getattr(self, name)
+            if ishelper(obj):
+                for cmd in obj.__help_targets__:
+                    if cmd in ret.keys():
+                        raise PyShellError("The command '{}' already has helper"
+                                           " method '{}', cannot register a"
+                                           " second method '{}'.".format( \
+                                                    cmd, ret[cmd], obj.__name__))
+                    ret[cmd] = obj.__name__
+        return ret
+
+    def __build_completer_map(self):
+        """Build a mapping from command names to completer names.
+
+        One command name maps to at most one completer method.
+        Multiple command names can map to the same completer method.
+
+        Only used by __init__() to initialize self._cmd_map. MUST NOT be used
+        elsewhere.
+
+        Raises:
+            PyShellError: A command maps to multiple helper methods.
+        """
+        ret = {}
+        for name in dir(self):
+            obj = getattr(self, name)
+            if iscompleter(obj):
+                for cmd in obj.__complete_targets__:
+                    if cmd in ret.keys():
+                        raise PyShellError("The command '{}' already has"
+                                           " complter"
+                                           " method '{}', cannot register a"
+                                           " second method '{}'.".format( \
+                                                    cmd, ret[cmd], obj.__name__))
+                    ret[cmd] = obj.__name__
+        return ret
+
     @property
     def prompt(self):
-        return str(self._prompt)
+        return '({})$ '.format('-'.join(
+                [ self.root_prompt ] + \
+                [ m.prompt_display for m in self._mode_stack ]))
 
     @property
     def history_fname(self):
@@ -156,6 +238,10 @@ class Shell(object):
 
         The doc string of the cmdloop() method explains how shell histories and
         history files are saved and restored.
+
+        The design of the Shell class encourage launching of subshells through
+        the subshell() decorator function. Nonetheless, the user has the option
+        of directly launching subshells via this method.
 
         Arguments:
             shell_cls: The Shell class object to instantiate and launch.
@@ -342,7 +428,6 @@ class Shell(object):
         """Exit to the root shell."""
         return 'end'
 
-    @command('exec')
     def _do_exec(self, args):
         """Execute a command using subprocess.Popen()."""
         if not args:
@@ -359,7 +444,13 @@ class Shell(object):
     @command('help')
     def _do_help(self, args):
         """Print help messages most relevant to the current line."""
-        pass
+        if not args:
+            self.stdout.write(self.doc_string())
+            self.stdout.write('\n')
+            sys.stdout.flush()
+        else:
+            # TODO: use registered helper function.
+            pass
 
     @command('history')
     def _do_history(self, args):
@@ -369,9 +460,13 @@ class Shell(object):
         the history file, whose file name is given by the history_fname
         property.
         """
-        readline.write_history_file(self.history_fname)
-        with open(self.history_fname, 'r', encoding = 'utf8') as f:
-            self.stdout.write(f.read())
+        if args and args[0] == 'clear':
+            readline.clear_history()
+            readline.write_history_file(self.history_fname)
+        else:
+            readline.write_history_file(self.history_fname)
+            with open(self.history_fname, 'r', encoding = 'utf8') as f:
+                self.stdout.write(f.read())
 
     def __driver_completer(self, text, state):
         """Display help messages and complete.
@@ -384,7 +479,11 @@ class Shell(object):
             A string used to replace the given text, if any.
             None if no completion candidates are found.
 
-        Ideally, a seperate callback method, _driver_helper() should be
+        Raises:
+            As this function is called via the readline complete callback, any
+            errors and exceptions are silently ignored.
+
+        Ideally, a seperate callback method, __dispatch_helper() should be
         registered with the readline library to be triggered with the '?'
         character. That would give the user a very convenient and clean way of
         displaying the most relevant help messages, i.e., entering '?' shows
@@ -418,7 +517,15 @@ class Shell(object):
                     self.stdout.write('\n')
                     self.stdout.write(self.doc_string())
                 else:
-                    Shell.__driver_helper(origline[:-1], self.stdout)
+                    toks = shlex.split(origline[:-1])
+                    try:
+                        msg = self.__dispatch_helper(toks)
+                    except Exception as e:
+                        self.stderr.write('\n')
+                        self.stderr.write(traceback.format_exc())
+                        self.stderr.flush()
+                    self.stdout.write('\n')
+                    self.stdout.write(msg)
                 # Restore the prompt and the original input.
                 self.stdout.write('\n')
                 self.stdout.write(self.prompt)
@@ -431,12 +538,18 @@ class Shell(object):
         offset = len(origline) - len(line)
         begidx = readline.get_begidx() - offset
         endidx = readline.get_endidx() - offset
-        if begidx == 0:
-            # If the line is empty, list all commands.
-            return self.__complete_cmds(text)[state]
-        else:
-            # TODO: Otherwise, try the completer method registered with the command.
-            return
+        try:
+            if begidx == 0:
+                # If the line is empty, list all commands.
+                return self.__complete_cmds(text)[state]
+            else:
+                # TODO: Otherwise, try the completer method registered with the command.
+                return
+        except IndexError:
+            pass
+        except:
+            self.stderr.write('\n')
+            self.stderr.write(traceback.format_exc())
 
     @classmethod
     def doc_string(cls):
@@ -444,14 +557,21 @@ class Shell(object):
 
         If this class does not have a doc string or the doc string is empty, try
         its base classes until the root base class, Shell, is reached.
+
+        CAVEAT:
+            This method assumes that this class and all its super classes are
+            derived from Shell or object.
         """
         clz = cls
         while not clz.__doc__:
             clz = clz.__bases__[0]
         return clz.__doc__
 
-    @staticmethod
-    def __driver_helper(origline, fp):
+    def __complete_cmds(self, text = ''):
+        """Get the list of commands whose names start with a given text."""
+        return [ name for name in self._cmd_map.keys() if name.startswith(text) ]
+
+    def __dispatch_helper(self, toks):
         """Write help message to file.
 
         Driver level helper method.
@@ -463,15 +583,31 @@ class Shell(object):
                 (root)$ fo?
 
         Arguments:
-            origline: The input line. Optionally parse the input line
-            fp: file-like object to write help messages to.
-        """
-        fp.write(textwrap.dedent(
-            '''
-            No help message is found for:
-            {}
-            '''.format(textwrap.indent(origline, '    '))))
+            toks: The list of command followed by its arguments.
+            fp: The file-like object to write help messages to.
 
-    def __complete_cmds(self, text = ''):
-        """Get the list of commands whose names start with a given text."""
-        return [ name for name in self._cmd_map.keys() if name.startswith(text) ]
+        Returns:
+            The help message.
+
+        Raises:
+             As this function is called via the readline complete callback, any
+             errors and exceptions are silently ignored.
+        """
+        cmd = toks[0]
+        if cmd in self._helper_map.keys():
+            helper_name = self._helper_map[cmd]
+            helper_method = getattr(self, helper_name)
+            args = toks[1:] if len(toks) > 1 else []
+            return helper_method(args)
+        else:
+            return textwrap.dedent('''\
+                            No help message is found for:
+                            {}
+                            '''.format(textwrap.indent(subprocess.list2cmdline(toks), '    ')))
+
+    @helper('history')
+    def _help_history(self, args_ignored):
+        return textwrap.dedent('''\
+                history             display history
+                history clear       clear history
+                ''')
