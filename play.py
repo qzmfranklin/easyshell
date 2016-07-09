@@ -5,13 +5,27 @@
 
 import pyshell
 
+
 # The subshell classes must be defined before being referenced.
 class KarShell(pyshell.Shell):
     """The KarShell.
 
     This message shows up when you type 'help'
     """
-    pass
+
+    # Overwrite the parser to apply a different lexing rule.
+    # The exact interface is documented in the parse_line() method.
+    def parse_line(self, line):
+        return line[0], line[1:]
+
+    # The 'p' command uses a different lexing rule than other shells.
+    # To visualize the difference in the lexing rule, try the following input,
+    # (actual characters are enclosed within a pair of single quotes):
+    #       '  p  didj -dd jidd jvi'
+    @pyshell.command('p')
+    def do_p(self, cmd, arg):
+        print("cmd = '{}', arg = '{}'".format(cmd, arg))
+
 
 class FooShell(pyshell.Shell):
 
@@ -21,8 +35,10 @@ class FooShell(pyshell.Shell):
     def do_kar(self, cmd, args):
         return 'karPROMPT' + '@'.join(args)
 
+
 class BarShell(pyshell.Shell):
     pass
+
 
 class MyShell(pyshell.Shell):
 
