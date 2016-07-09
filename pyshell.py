@@ -2,7 +2,9 @@
 """
 
 import copy
+import inspect
 import os
+import pprint
 import readline
 import shlex
 import shutil
@@ -22,6 +24,19 @@ def command(*commands, visible = True):
     Arguments:
         commands: Names of command that should trigger this function object.
         visible: This command is visible in tab completions
+
+    ----------------------------
+    Interface of command methods:
+
+        @command('foo', 'bar')
+        def bar(self, args):
+            '''The method invoked by 'foo' and 'bar' commands.
+
+            Arguments:
+                args: A list of strings. This list is obtianed via
+                    shlex.split().
+            '''
+            pass
     """
     def decorated_func(f):
         f.__command__ = list(commands)
@@ -47,6 +62,20 @@ def helper(*commands):
 
     Arguments:
         commands: Names of command that should trigger this function object.
+
+    ---------------------------
+    Interface of helper methods:
+
+        @helper('some-command')
+        def help_foo(self, args):
+            '''
+            Arguments:
+                args: A list of arguments.
+
+            Returns:
+                A string that is the help message.
+            '''
+            pass
     """
     def decorated_func(f):
         f.__help_targets__ = list(commands)
@@ -55,7 +84,7 @@ def helper(*commands):
 
 
 def ishelper(f):
-    """Is the function object a completer function or not."""
+    """Is the function object a helper function or not."""
     return hasattr(f, '__help_targets__')
 
 
@@ -64,6 +93,38 @@ def completer(*commands):
 
     Arguments:
         commands: Names of command that should trigger this function object.
+
+    ------------------------------
+    Interface of completer methods:
+
+        @completer('some-other_command')
+        def complete_foo(self, args, text):
+            '''
+            Arguments:
+                args: A list of arguments. The first token, i.e, the command
+                    itself, is not included.
+                text: The scope of text being replaced.
+
+                A few examples, with '$' representing the shell prompt and
+                '|' represents the cursor position:
+                        $ |
+                        $ history|
+                            handled by the __driver_completer() method
+                        $ history |
+                            args = []
+                            text = ''
+                        $ history cle|
+                            args = []
+                            text = 'cle'
+                        $ history clear |
+                            args = ['clear']
+                            text = ''
+
+            Returns:
+                A list of candidates. If no candidate was found, return
+                either [] or None.
+            '''
+            pass
     """
     def decorated_func(f):
         f.__complete_targets__ = list(commands)
@@ -89,12 +150,25 @@ def subshell(shell_cls, *commands):
         shell_cls: A subclass of ShellBase to be launched.
         commands: Names of command that should trigger this function object.
 
-    Returns:
-        A string used as the prompt.
+    -----------------------------
+    Interface of subshell methods:
+
+        @command(SomeShellClass, 'foo')
+        def bar(self, args):
+            '''The command 'foo' invokes this method then launches the subshell.
+
+            Arguments:
+                args: A list of strings. This list is obtianed via
+                    shlex.split().
+
+            Returns:
+                A string used as the prompt.
+            '''
+            pass
     """
     def decorated_func(f):
-        def inner_func(self, args):
-            prompt_display = f(self, args)
+        def inner_func(self, cmd, args):
+            prompt_display = f(self, cmd, args)
             return self.launch_subshell(shell_cls, args,
                     prompt_display = prompt_display)
         inner_func.__name__ = f.__name__
@@ -104,15 +178,18 @@ def subshell(shell_cls, *commands):
 
 class ShellBase(object):
 
-    """Emacs-like recursive shell.
+    """Base shell class.
 
-    Get help:
-            <TAB>               display commands
-            ?<TAB>              display this message
-            <command>?<TAB>     display help message for <command>
+    This class implements the following core infrastructures:
+          - Recursively launch subshell.
+          - Register commands, helpers, and completers.
+          - The ?<TAB> help experience.
 
-    Execute a command in the Linux shell:
-            ! <command>         execute <command> using subprocess.Popen
+    Subclasses in the same module must implement a few command methods and
+    completer methods to become a functional shell:
+          - __exec__ (hidden)
+          - exit
+          - history
     """
 
     class _Mode(object):
@@ -235,6 +312,12 @@ class ShellBase(object):
 
         return 'end' if exit_directive == 'end' else False
 
+    def preloop(self):
+        pass
+
+    def postloop(self):
+        pass
+
     def cmdloop(self):
         """Start the main loop of the interactive shell.
 
@@ -287,7 +370,7 @@ class ShellBase(object):
         readline.set_completer_delims(new_delims)
 
         # Load the new completer function and start a new history buffer.
-        readline.set_completer(self.__stub_completer)
+        readline.set_completer(self.__driver_stub)
         readline.clear_history()
         if os.path.isfile(self.history_fname):
             readline.read_history_file(self.history_fname)
@@ -312,7 +395,11 @@ class ShellBase(object):
                     line = input(self.prompt).strip()
                 except EOFError:
                     line = ShellBase.EOF
-                exit_directive = self.__exec_cmd(line)
+
+                try:
+                    exit_directive = self.__exec_line__(line)
+                except:
+                    self.stderr.write(traceback.format_exc())
         finally:
             self.postloop()
             # Restore the completer function, save the history, and restore old
@@ -325,133 +412,85 @@ class ShellBase(object):
 
         return exit_directive
 
-    def preloop(self):
-        pass
+    def __exec_line__(self, line):
+        """Execute the input line.
 
-    def postloop(self):
-        pass
+        emptyline: no-op
+        unknown command: print error message
+        known command: invoke the corresponding method
 
-    @command('__exec__', visible = False)
-    def _do_exec(self, args):
-        """Execute a command using subprocess.Popen().
-        """
-        if not args:
-            self.stderr.write("run: empty command\n")
-            return
-        proc = subprocess.Popen(subprocess.list2cmdline(args),
-                shell = True, stdout = self.stdout)
-        proc.wait()
-
-    @command('exit')
-    def _do_exit(self, args):
-        """\
-        Exit shell.
-            exit | C-D          Exit to the parent shell.
-            exit root           Exit to the root shell.
-        """
-        if args and args[0] == 'root':
-            return 'end'
-        elif not args:
-            return True
-        else:
-            self.stdout.write(textwrap.dedent('''\
-                    exit: unrecognized arguments: {}
-                    ''')).format(subprocess.list2cmdline(args))
-
-    @completer('exit')
-    def _complete_exit(self, args, text):
-        """Find candidates for the 'exit' command."""
-        if args:
-            return
-        return [ x for x in { 'root', } \
-                if x.startswith(text) ]
-
-    @command('history')
-    def _do_history(self, args):
-        """\
-        Display history.
-            history             Display history.
-            history clear       Clear history.
-            history clearall    Clear history for all shells.
-        """
-        if args and args[0] == 'clear':
-            readline.clear_history()
-            readline.write_history_file(self.history_fname)
-        elif args and args[0] == 'clearall':
-            readline.clear_history()
-            shutil.rmtree(self._temp_dir, ignore_errors = True)
-            os.makedirs(os.path.join(self._temp_dir, 'history'))
-        else:
-            readline.write_history_file(self.history_fname)
-            with open(self.history_fname, 'r', encoding = 'utf8') as f:
-                self.stdout.write(f.read())
-
-    @completer('history')
-    def _complete_history(self, args, text):
-        """Find candidates for the 'history' command."""
-        if args:
-            return
-        return [ x for x in { 'clear', 'clearall' } \
-                if x.startswith(text) ]
-
-    def __parse_line(self, line):
-        """Parse a line of input.
-
-        The input line is tokenized using the same rules as the way bash shell
-        tokenizes inputs. All quoting and escaping rules from the bash shell
-        apply here too.
+        The parser method, parse_line(), can be overriden in subclasses to
+        apply different parsing rules. Please refer to the doc string of
+        parse_line() for complete information.
 
         Arguments:
             line: A string, representing a line of input from the shell. This
                 string is preprocessed by cmdloop() to convert the EOF character
                 to '\\x04', i.e., 'D' - 64, if the EOF character is the only
                 character from the shell.
-
-        Returns:
-            A tuple (cmd, args) where args is a list of strings. If the input
-            line has only a single EOF character '\\x04', return ( 'exit', [] ).
         """
+        if not line:
+            return
+
+        cmd, args = ( '', [] )
+
+        toks = shlex.split(line)
+        if not toks:
+            return
+
         if line == ShellBase.EOF:
             # This is a hack to allow the EOF character to behave exactly like
             # typing the 'exit' command.
             readline.insert_text('exit\n')
             readline.redisplay()
-            return ( 'exit', [] )
+            cmd = 'exit'
+        elif toks and toks[0] == '!':
+            cmd = '!'
+            args = toks[1:] if len(toks) > 1 else []
+        else:
+            cmd, args = self.parse_line(line)
 
-        toks = shlex.split(line.strip())
-        if len(toks) == 0:
-            return ( '', [] )
-
-        cmd = toks[0]
-        if cmd == '!':
-            cmd = '__exec__'
-
-        return ( cmd, [] if len(toks) == 1 else toks[1:] )
-
-    def __exec_cmd(self, line):
-        """Execute a command.
-
-        emptyline: no-op
-        unknown command: print error message
-        known command: invoke the corresponding method
-        """
-        if not line:
-            return
-
-        cmd, args = self.__parse_line(line)
         if not cmd in self._cmd_map_all.keys():
             self.stderr.write("{}: command not found\n".format(cmd))
             return
 
         func_name = self._cmd_map_all[cmd]
         func = getattr(self, func_name)
-        return func(args)
+        return func(cmd, args)
 
-    def __stub_completer(self, text, state):
+    def parse_line(self, line):
+        """Parse a line of input.
+
+        Subclasses can override this method to change the lexing rule.
+
+        The input line is tokenized using the same rules as the way bash shell
+        tokenizes inputs. All quoting and escaping rules from the bash shell
+        apply here too.
+
+        The following cases are handled by __exec_line__():
+            1.  Empty line.
+            2.  The input line is completely made of whitespace characters.
+            3.  The input line is the EOF character.
+            4.  The first token, as tokenized by shlex.split(), is '!'.
+
+        Arguments:
+            The line to parse.
+
+        Returns:
+            A tuple (cmd, args). The first element cmd must be a python3 string.
+            The second element is, by default, a list of strings representing
+            the arguments, as tokenized by shlex.split().
+        """
+        toks = shlex.split(line)
+        # Safe to index the 0-th element because this line would have been
+        # parsed by __exec_line__ if toks is an empty list.
+        return ( toks[0], [] if len(toks) == 1 else toks[1:] )
+
+    def __driver_stub(self, text, state):
         """Display help messages or invoke the proper completer.
 
         The interface of helper methods and completer methods are documented in
-        the __driver_completer() method and the __driver_helper() method,
+        the helper() decorator method and the completer() decorator method,
         respectively.
 
         Arguments:
@@ -488,37 +527,6 @@ class ShellBase(object):
         Returns:
             A string, the candidate.
 
-        ------------------------------
-        Interface of completer methods:
-
-            @completer('some-other_command')
-            def complete_foo(self, args, text):
-                '''
-                Arguments:
-                    args: A list of arguments. The first token, i.e, the command
-                        itself, is not included.
-                    text: The scope of text being replaced.
-
-                    A few examples, with '$' representing the shell prompt and
-                    '|' represents the cursor position:
-                            $ |
-                            $ history|
-                                handled by the __driver_completer() method
-                            $ history |
-                                args = []
-                                text = ''
-                            $ history cle|
-                                args = []
-                                text = 'cle'
-                            $ history clear |
-                                args = ['clear']
-                                text = ''
-
-                Returns:
-                    A list of candidates. If no candidate was found, return
-                    either [] or None.
-                '''
-                pass
         """
         # If the line is empty or the user is still inputing the first token,
         # complete with available commands.
@@ -535,7 +543,7 @@ class ShellBase(object):
             completer_name = self._completer_map[cmd]
             completer_method = getattr(self, completer_name)
             try:
-                candidates = completer_method(args, text)
+                candidates = completer_method(cmd, args, text)
             except:
                 self.stderr.write('\n')
                 self.stderr.write(traceback.format_exc())
@@ -558,20 +566,6 @@ class ShellBase(object):
         Raises:
             Errors from helper methods print stack trace without terminating
             this shell. Other exceptions will terminate this shell.
-
-        ---------------------------
-        Interface of helper methods:
-
-            @helper('some-command')
-            def help_foo(self, args):
-                '''
-                Arguments:
-                    args: A list of arguments.
-
-                Returns:
-                    A string that is the help message.
-                '''
-                pass
         """
         if line.strip() == '?':
             self.stdout.write('\n')
@@ -620,7 +614,7 @@ class ShellBase(object):
             helper_name = self._helper_map[cmd]
             helper_method = getattr(self, helper_name)
             args = toks[1:] if len(toks) > 1 else []
-            return helper_method(args)
+            return helper_method(cmd, args)
 
         if cmd in self._cmd_map_all.keys():
             name = self._cmd_map_all[cmd]
@@ -721,3 +715,156 @@ class ShellBase(object):
                                                     cmd, ret[cmd], obj.__name__))
                     ret[cmd] = obj.__name__
         return ret
+
+
+class _BasicShell(ShellBase):
+
+    """Implement built-in commands."""
+
+    @command('__exec__', visible = False)
+    def _do_exec(self, cmd, args):
+        """Execute a command using subprocess.Popen().
+        """
+        if not args:
+            self.stderr.write("run: empty command\n")
+            return
+        proc = subprocess.Popen(subprocess.list2cmdline(args),
+                shell = True, stdout = self.stdout)
+        proc.wait()
+
+    @command('end', 'exit')
+    def _do_exit(self, cmd, args):
+        """\
+        Exit shell.
+            exit | C-D          Exit to the parent shell.
+            exit root | end     Exit to the root shell.
+        """
+        if cmd == 'end':
+            return 'end'
+        if args and args[0] == 'root':
+            return 'end'
+        elif not args:
+            return True
+        else:
+            self.stdout.write(textwrap.dedent('''\
+                    exit: unrecognized arguments: {}
+                    ''')).format(subprocess.list2cmdline(args))
+
+    @completer('exit')
+    def _complete_exit(self, cmd, args, text):
+        """Find candidates for the 'exit' command."""
+        if args:
+            return
+        return [ x for x in { 'root', } \
+                if x.startswith(text) ]
+
+    @command('history')
+    def _do_history(self, cmd, args):
+        """\
+        Display history.
+            history             Display history.
+            history clear       Clear history.
+            history clearall    Clear history for all shells.
+        """
+        if args and args[0] == 'clear':
+            readline.clear_history()
+            readline.write_history_file(self.history_fname)
+        elif args and args[0] == 'clearall':
+            readline.clear_history()
+            shutil.rmtree(self._temp_dir, ignore_errors = True)
+            os.makedirs(os.path.join(self._temp_dir, 'history'))
+        else:
+            readline.write_history_file(self.history_fname)
+            with open(self.history_fname, 'r', encoding = 'utf8') as f:
+                self.stdout.write(f.read())
+
+    @completer('history')
+    def _complete_history(self, cmd, args, text):
+        """Find candidates for the 'history' command."""
+        if args:
+            return
+        return [ x for x in { 'clear', 'clearall' } \
+                if x.startswith(text) ]
+
+class _DebuggingShell(_BasicShell):
+
+    """Debugging shell.
+
+    Lexer is changed. For example, '  foo   dicj didiw  ' is tokenized as
+            [ 'foo', '   dicj didiw  ' ]
+
+    Available commands:
+            p <id>          Display the content of an object.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from _python_completer import Completer
+        self.__python_completer = Completer()
+
+    @completer('p')
+    def _complete_print(self, cmd, arg, text):
+        return self.__python_completer.find_matches(text)
+
+    @command('p')
+    def _do_print(self, cmd, arg):
+        """\
+        Display symbols.
+            p <id>          Display the content of an object.
+
+        TODO: The completer for this command does not work 100% correctl yet.
+        """
+        name = arg.strip()
+        try:
+            code = textwrap.dedent('''
+                    self.stdout.write(name + ':\\n' + textwrap.indent(pprint.pformat({}), '    ') + '\\n')
+                    ''').format(name).strip()
+            eval(code, globals(), locals())
+        except NameError:
+            self.stderr.write("p: name '{}' is not defined\n".format(name))
+        self.stdout.flush()
+
+    def parse_line(self, line):
+        """Parser for the debugging shell.
+
+        Treat everything after the first token as one literal entity. Whitespace
+        characters between the first token and the next first non-whitespace
+        character are preserved.
+
+        For example, '  foo   dicj didiw  ' is parsed as
+            ( 'foo', '   dicj didiw  ' )
+
+        Returns:
+            A tuple (cmd, args), where the args is one string containing
+            everything after the cmd as is.
+        """
+        line = line.lstrip()
+        toks = shlex.split(line)
+        cmd = toks[0]
+        arg = line[len(cmd):]
+        return cmd, arg
+
+
+class _Shell(_BasicShell):
+
+    """Embed _DebuggingShell into _BasicShell."""
+
+    @subshell(_DebuggingShell, 'debug')
+    def _do_debug(self, cmd, args):
+        """Enter the debugging shell."""
+        return 'DEBUG'
+
+
+class Shell(_Shell):
+
+    """Emacs-like recursive shell.
+
+    Get help:
+            <TAB>               Display commands.
+            ?<TAB>              Display this message.
+            <command>?<TAB>     Display help message for <command>.
+
+    Execute a command in the Linux shell:
+            ! <command>         Execute <command> using subprocess.Popen().
+    """
+    pass
