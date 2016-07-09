@@ -6,14 +6,14 @@
 import pyshell
 
 # The subshell classes must be defined before being referenced.
-class KarShell(pyshell.Shell):
+class KarShell(pyshell.ShellBase):
     """The KarShell.
 
     This message shows up when you type 'help'
     """
     pass
 
-class FooShell(pyshell.Shell):
+class FooShell(pyshell.ShellBase):
 
     # 'kar' enters a subshell with a prompt string that depends on the
     # arguments.
@@ -21,10 +21,10 @@ class FooShell(pyshell.Shell):
     def do_kar(self, args):
         return 'karPROMPT' + '@'.join(args)
 
-class BarShell(pyshell.Shell):
+class BarShell(pyshell.ShellBase):
     pass
 
-class MyShell(pyshell.Shell):
+class MyShell(pyshell.ShellBase):
 
     def preloop(self):
         print('Hello! Welcome to MyShell.')
@@ -43,7 +43,7 @@ class MyShell(pyshell.Shell):
     def do_bar(self, args_ignored):
         return 'BarPrompt'
 
-    # The same Shell class, KarShell, can be freely reused.
+    # The same ShellBase class, KarShell, can be freely reused.
     @pyshell.subshell(KarShell, 'kar0')
     def do_kar(self, args_ignored):
         return 'kar0'
@@ -62,13 +62,13 @@ class MyShell(pyshell.Shell):
         print('Hello world!')
 
     # Add helper method for 'foo' and 'fsh' commands. The interface is detailed
-    # in the doc string of the Shell.__driver_helper() method.
+    # in the doc string of the ShellBase.__driver_helper() method.
     @pyshell.helper('foo', 'fsh')
     def help_foo(self, args_ignored):
         return 'foo (--all|--no), fsh         Enter the foo-prompt subshell'
 
     # Add completer method for 'foo'. The interface is detailed in the doc
-    # string of the Shell.__driver_completer() method.
+    # string of the ShellBase.__driver_completer() method.
     @pyshell.completer('foo')
     def complete_foo(self, args, text):
         if args:

@@ -83,10 +83,10 @@ def iscompleter(f):
 # attribute is unchanged but the repr() function displays the method as
 # 'inner_func'.
 def subshell(shell_cls, *commands):
-    """Decorate a function to launch a Shell subshell.
+    """Decorate a function to launch a ShellBase subshell.
 
     Arguments:
-        shell_cls: A subclass of Shell to be launched.
+        shell_cls: A subclass of ShellBase to be launched.
         commands: Names of command that should trigger this function object.
 
     Returns:
@@ -102,7 +102,7 @@ def subshell(shell_cls, *commands):
     return decorated_func
 
 
-class Shell(object):
+class ShellBase(object):
 
     """Emacs-like recursive shell.
 
@@ -136,7 +136,7 @@ class Shell(object):
 
         Arguments:
             debug: If True, print_debug() prints to self.stderr.
-            mode_stack: A stack of Shell._Mode objects.
+            mode_stack: A stack of ShellBase._Mode objects.
             root_prompt: The root prompt.
             stdout, stderr: The file objects to write to for output and error.
             temp_dir: The temporary directory to save history files. The default
@@ -152,20 +152,22 @@ class Shell(object):
 
         readline.parse_and_bind('tab: complete')
 
-        self._cmd_map_all, self._cmd_map_visible = Shell.__build_cmd_maps()
-        self._helper_map = Shell.__build_helper_map()
-        self._completer_map = Shell.__build_completer_map()
+        # Even though __build_XXX_map() methods are class methods, they must be
+        # called via self. Otherwise they cannot find the commands.
+        self._cmd_map_all, self._cmd_map_visible = self.__build_cmd_maps()
+        self._helper_map = self.__build_helper_map()
+        self._completer_map = self.__build_completer_map()
 
     @classmethod
     def doc_string(cls):
         """Get the doc string of this class.
 
         If this class does not have a doc string or the doc string is empty, try
-        its base classes until the root base class, Shell, is reached.
+        its base classes until the root base class, ShellBase, is reached.
 
         CAVEAT:
             This method assumes that this class and all its super classes are
-            derived from Shell or object.
+            derived from ShellBase or object.
         """
         clz = cls
         while not clz.__doc__:
@@ -193,12 +195,12 @@ class Shell(object):
         The doc string of the cmdloop() method explains how shell histories and
         history files are saved and restored.
 
-        The design of the Shell class encourage launching of subshells through
+        The design of the ShellBase class encourage launching of subshells through
         the subshell() decorator function. Nonetheless, the user has the option
         of directly launching subshells via this method.
 
         Arguments:
-            shell_cls: The Shell class object to instantiate and launch.
+            shell_cls: The ShellBase class object to instantiate and launch.
             args: Arguments used to launch this subshell.
             prompt_display: The name of the subshell. The default, None, means
                 to use the shell_cls.__name__.
@@ -213,7 +215,7 @@ class Shell(object):
         readline.write_history_file(self.history_fname)
 
         prompt_display = prompt_display if prompt_display else shell_cls.__name__
-        mode = Shell._Mode(args, prompt_display)
+        mode = ShellBase._Mode(args, prompt_display)
         shell = shell_cls(
                 debug = self.debug,
                 mode_stack = self._mode_stack + [ mode ],
@@ -247,7 +249,7 @@ class Shell(object):
 
         History:
 
-            Shell histories are persistently saved to files, whose name matches
+            ShellBase histories are persistently saved to files, whose name matches
             the prompt string. For example, if the prompt of a subshell is
             '(Foo-Bar-Kar)$ ', the name of its history file is s-Foo-Bar-Kar.
             The history_fname property encodes this algorithm.
@@ -281,7 +283,7 @@ class Shell(object):
         # completer_delims.
         old_completer = readline.get_completer()
         old_delims = readline.get_completer_delims()
-        new_delims = ''.join(list(set(old_delims) - set(Shell._non_delims)))
+        new_delims = ''.join(list(set(old_delims) - set(ShellBase._non_delims)))
         readline.set_completer_delims(new_delims)
 
         # Load the new completer function and start a new history buffer.
@@ -309,7 +311,7 @@ class Shell(object):
                 try:
                     line = input(self.prompt).strip()
                 except EOFError:
-                    line = Shell.EOF
+                    line = ShellBase.EOF
                 exit_directive = self.__exec_cmd(line)
         finally:
             self.postloop()
@@ -409,7 +411,7 @@ class Shell(object):
             A tuple (cmd, args) where args is a list of strings. If the input
             line has only a single EOF character '\\x04', return ( 'exit', [] ).
         """
-        if line == Shell.EOF:
+        if line == ShellBase.EOF:
             # This is a hack to allow the EOF character to behave exactly like
             # typing the 'exit' command.
             readline.insert_text('exit\n')
@@ -633,7 +635,7 @@ class Shell(object):
 
 
     ################################################################################
-    # _build_XXX_map() methods are only used by Shell.__init__() method.
+    # _build_XXX_map() methods are only used by ShellBase.__init__() method.
     # TODO: The internal logic looks so similar. Should consider merging these
     # methods.
     ################################################################################
