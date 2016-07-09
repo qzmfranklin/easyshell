@@ -37,7 +37,7 @@ import traceback
 # Decorators with arguments is a little bit tricky to get right. A good
 # thread on it is:
 #       http://stackoverflow.com/questions/5929107/python-decorators-with-parameters
-def command(*commands, is_visible = True, is_internal = True):
+def command(*commands, is_visible = True, is_internal = False):
     """Decorate a function to be the entry function of commands.
 
     Arguments:
@@ -941,7 +941,7 @@ class _DebuggingShell(_BasicShell):
         toks = shlex.split(line)
         cmd = toks[0]
         arg = line[len(cmd):]
-        return cmd, [ arg ]
+        return cmd, [ arg, ]
 
 
 class _Shell(_BasicShell):
