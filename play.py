@@ -78,7 +78,6 @@ class MyShell(pyshell.Shell):
 
 
 if __name__ == '__main__':
-
     MyShell(
             # Supply a custom root prompt.
             root_prompt = 'PlayBoy',
