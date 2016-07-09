@@ -33,6 +33,7 @@ import tempfile
 import textwrap
 import traceback
 
+
 # Decorators with arguments is a little bit tricky to get right. A good
 # thread on it is:
 #       http://stackoverflow.com/questions/5929107/python-decorators-with-parameters
@@ -176,12 +177,13 @@ def iscompleter(f):
 # Then note that when the method being decorated is printed, its __name__
 # attribute is unchanged but the repr() function displays the method as
 # 'inner_func'.
-def subshell(shell_cls, *commands):
+def subshell(shell_cls, *commands, **kwargs):
     """Decorate a function to launch a ShellBase subshell.
 
     Arguments:
         shell_cls: A subclass of ShellBase to be launched.
         commands: Names of command that should trigger this function object.
+        kwargs: The keyword arguments for the command decorator method.
 
     -----------------------------
     Interface of subshell methods:
@@ -205,9 +207,15 @@ def subshell(shell_cls, *commands):
             return self.launch_subshell(shell_cls, args,
                     prompt_display = prompt_display)
         inner_func.__name__ = f.__name__
-        return command(*commands)(inner_func) if commands else inner_func
+        obj = command(*commands)(inner_func, **kwargs) if commands else inner_func
+        obj.__launch_subshell__ = shell_cls
+        return obj
     return decorated_func
 
+
+def issubshellcommand(f):
+    """Does the function object launch a subshell or not."""
+    return hasattr(f, '__launch_subshell__')
 
 class ShellBase(object):
 
@@ -233,7 +241,12 @@ class ShellBase(object):
             self.prompt_display = prompt_display
 
     EOF = chr(ord('D') - 64)
-    _non_delims = '-?'
+
+    # These characters are not treated as delimiters.
+    #   char    |       rationale
+    # ----------+--------------------------------------------------------
+    #     -     |  Allow commands to contain '-'.
+    _non_delims = '-'
 
     def __init__(self, *,
             debug = False,
@@ -267,6 +280,8 @@ class ShellBase(object):
         self._cmd_map_all, self._cmd_map_visible, self._cmd_map_internal = self.__build_cmd_maps()
         self._helper_map = self.__build_helper_map()
         self._completer_map = self.__build_completer_map()
+
+        self.__completion_candidates = []
 
     @classmethod
     def doc_string(cls):
@@ -569,11 +584,21 @@ class ShellBase(object):
             A string, the candidate.
 
         """
+        if state != 0:
+            return self.__completion_candidates[state]
+
+        # Update the cache when this method is first called, i.e., state == 0.
+
         # If the line is empty or the user is still inputing the first token,
         # complete with available commands.
         if not toks or (len(toks) == 1 and text):
-            candidates = self.__complete_cmds(text)
-            return candidates[state]
+            try:
+                self.__completion_candidates = self.__complete_cmds(text)
+            except:
+                self.stderr.write('\n')
+                self.stderr.write(traceback.format_exc())
+                self.__completion_candidates = []
+            return self.__completion_candidates[state]
 
         # Otherwise, try to complete with the registered completer method.
         cmd = toks[0]
@@ -584,11 +609,13 @@ class ShellBase(object):
             completer_name = self._completer_map[cmd]
             completer_method = getattr(self, completer_name)
             try:
-                candidates = completer_method(cmd, args, text)
+                self.__completion_candidates = completer_method(cmd, args, text)
             except:
                 self.stderr.write('\n')
                 self.stderr.write(traceback.format_exc())
-        return candidates[state]
+                self.__completion_candidates = []
+
+        return self.__completion_candidates[state]
 
     def __complete_cmds(self, text):
         """Get the list of commands whose names start with a given text."""
