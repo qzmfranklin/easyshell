@@ -1,7 +1,7 @@
 """A generic class to build line-oriented command interpreters.
 """
 
-import argparse
+import copy
 import os
 import readline
 import shlex
@@ -152,9 +152,9 @@ class Shell(object):
 
         readline.parse_and_bind('tab: complete')
 
-        self._cmd_map = self.__build_cmd_map()
-        self._helper_map = self.__build_helper_map()
-        self._completer_map = self.__build_completer_map()
+        self._cmd_map_all, self._cmd_map_visible = Shell.__build_cmd_maps()
+        self._helper_map = Shell.__build_helper_map()
+        self._completer_map = Shell.__build_completer_map()
 
     @classmethod
     def doc_string(cls):
@@ -437,11 +437,11 @@ class Shell(object):
             return
 
         cmd, args = self.__parse_line(line)
-        if not cmd in self._cmd_map.keys():
+        if not cmd in self._cmd_map_all.keys():
             self.stderr.write("{}: command not found\n".format(cmd))
             return
 
-        func_name = self._cmd_map[cmd]
+        func_name = self._cmd_map_all[cmd]
         func = getattr(self, func_name)
         return func(args)
 
@@ -541,7 +541,7 @@ class Shell(object):
 
     def __complete_cmds(self, text):
         """Get the list of commands whose names start with a given text."""
-        return [ name for name in self._cmd_map.keys() if name.startswith(text) ]
+        return [ name for name in self._cmd_map_visible.keys() if name.startswith(text) ]
 
     def __driver_helper(self, line):
         """Driver level helper method.
@@ -620,8 +620,8 @@ class Shell(object):
             args = toks[1:] if len(toks) > 1 else []
             return helper_method(args)
 
-        if cmd in self._cmd_map.keys():
-            name = self._cmd_map[cmd]
+        if cmd in self._cmd_map_all.keys():
+            name = self._cmd_map_all[cmd]
             method = getattr(self, name)
             return textwrap.dedent(method.__doc__)
 
@@ -631,35 +631,44 @@ class Shell(object):
                        '''.format(textwrap.indent(
                            subprocess.list2cmdline(toks), '    ')))
 
+
     ################################################################################
-    # __build_XXX_map() methods are only used by the __init__() method.
+    # _build_XXX_map() methods are only used by Shell.__init__() method.
     # TODO: The internal logic looks so similar. Should consider merging these
     # methods.
     ################################################################################
 
-    def __build_cmd_map(self):
-        """Build a mapping from command names to method names.
+    @classmethod
+    def __build_cmd_maps(cls):
+        """Build the mapping from command names to method names.
 
         One command name maps to at most one method.
         Multiple command names can map to the same method.
 
         Only used by __init__() to initialize self._cmd_map. MUST NOT be used
         elsewhere.
+
+        Returns:
+            A tuple (cmd_map, hidden_cmd_map).
         """
-        ret = {}
-        for name in dir(self):
-            obj = getattr(self, name)
-            if iscommand(obj) and isvisiblecommand(obj):
+        cmd_map_all = {}
+        cmd_map_visible = {}
+        for name in dir(cls):
+            obj = getattr(cls, name)
+            if iscommand(obj):
                 for cmd in obj.__command__:
-                    if cmd in ret.keys():
+                    if cmd in cmd_map_all.keys():
                         raise PyShellError("The command '{}' already has cmd"
                                            " method '{}', cannot register a"
                                            " second method '{}'.".format( \
-                                                    cmd, ret[cmd], obj.__name__))
-                    ret[cmd] = obj.__name__
-        return ret
+                                                    cmd, cmd_map_all[cmd], obj.__name__))
+                    cmd_map_all[cmd] = obj.__name__
+                    if isvisiblecommand(obj):
+                        cmd_map_visible[cmd] = obj.__name__
+        return cmd_map_all, cmd_map_visible
 
-    def __build_helper_map(self):
+    @classmethod
+    def __build_helper_map(cls):
         """Build a mapping from command names to helper names.
 
         One command name maps to at most one helper method.
@@ -672,8 +681,8 @@ class Shell(object):
             PyShellError: A command maps to multiple helper methods.
         """
         ret = {}
-        for name in dir(self):
-            obj = getattr(self, name)
+        for name in dir(cls):
+            obj = getattr(cls, name)
             if ishelper(obj):
                 for cmd in obj.__help_targets__:
                     if cmd in ret.keys():
@@ -684,7 +693,8 @@ class Shell(object):
                     ret[cmd] = obj.__name__
         return ret
 
-    def __build_completer_map(self):
+    @classmethod
+    def __build_completer_map(cls):
         """Build a mapping from command names to completer names.
 
         One command name maps to at most one completer method.
@@ -697,8 +707,8 @@ class Shell(object):
             PyShellError: A command maps to multiple helper methods.
         """
         ret = {}
-        for name in dir(self):
-            obj = getattr(self, name)
+        for name in dir(cls):
+            obj = getattr(cls, name)
             if iscompleter(obj):
                 for cmd in obj.__complete_targets__:
                     if cmd in ret.keys():
