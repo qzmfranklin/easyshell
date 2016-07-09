@@ -16,14 +16,16 @@ import traceback
 # Decorators with arguments is a little bit tricky to get right. A good
 # thread on it is:
 #       http://stackoverflow.com/questions/5929107/python-decorators-with-parameters
-def command(*commands):
+def command(*commands, visible = True):
     """Decorate a function to be the entry function of commands.
 
     Arguments:
         commands: Names of command that should trigger this function object.
+        visible: This command is visible in tab completions
     """
     def decorated_func(f):
         f.__command__ = list(commands)
+        f.__command_visibility__ = visible
         return f
     return decorated_func
 
@@ -33,6 +35,11 @@ def command(*commands):
 def iscommand(f):
     """Is the function object a command or not."""
     return hasattr(f, '__command__')
+
+
+def isvisiblecommand(f):
+    """Is the function object a visible command or not."""
+    return getattr(f, '__command_visibility__')
 
 
 def helper(*commands):
@@ -97,24 +104,15 @@ def subshell(shell_cls, *commands):
 
 class Shell(object):
 
-    """Recursive interactive shell.
+    """Emacs-like recursive shell.
 
-    Exit shell:
-            end                 exit to the root shell
-            exit, C-D           exit to the parent shell
-
-    Manipulate history:
-            history             display history of this shell
-            history clear       clear history of this shell
+    Get help:
+            <TAB>               display commands
+            ?<TAB>              display this message
+            <command>?<TAB>     display help message for <command>
 
     Execute a command in the Linux shell:
             ! <command>         execute <command> using subprocess.Popen
-
-    Get help:
-            <TAB>               display all valid commands
-            ?<TAB>              display this message
-            ?<CR>               display this message
-            <command>?<TAB>     display help message for the incomplete command
     """
 
     class _Mode(object):
@@ -331,29 +329,45 @@ class Shell(object):
     def postloop(self):
         pass
 
-    @command('end')
-    def _do_end(self, args):
-        """Exit to the root shell."""
-        return 'end'
-
+    @command('__exec__', visible = False)
     def _do_exec(self, args):
-        """Execute a command using subprocess.Popen()."""
+        """Execute a command using subprocess.Popen().
+        """
         if not args:
-            self.stderr.write("exec: empty command\n")
+            self.stderr.write("run: empty command\n")
             return
-        proc = subprocess.Popen(args, shell = True, stdout = self.stdout)
+        proc = subprocess.Popen(subprocess.list2cmdline(args),
+                shell = True, stdout = self.stdout)
         proc.wait()
 
     @command('exit')
     def _do_exit(self, args):
-        """Exit this shell. Same as C-D."""
-        return True
+        """\
+        Exit shell.
+            exit | C-D          Exit to the parent shell.
+            exit root           Exit to the root shell.
+        """
+        if args and args[0] == 'root':
+            return 'end'
+        elif not args:
+            return True
+        else:
+            self.stdout.write(textwrap.dedent('''\
+                    exit: unrecognized arguments: {}
+                    ''')).format(subprocess.list2cmdline(args))
+
+    @completer('exit')
+    def _complete_exit(self, args, text):
+        """Find candidates for the 'exit' command."""
+        if args:
+            return
+        return [ x for x in { 'root', } \
+                if x.startswith(text) ]
 
     @command('history')
     def _do_history(self, args):
         """\
         Display history.
-
             history             Display history.
             history clear       Clear history.
             history clearall    Clear history for all shells.
@@ -369,12 +383,6 @@ class Shell(object):
             readline.write_history_file(self.history_fname)
             with open(self.history_fname, 'r', encoding = 'utf8') as f:
                 self.stdout.write(f.read())
-
-    @helper('history')
-    def _help_history(self, args_ignored):
-        cmd_name = self._cmd_map['history']
-        cmd_method = getattr(self, cmd_name)
-        return textwrap.dedent(cmd_method.__doc__)
 
     @completer('history')
     def _complete_history(self, args, text):
@@ -414,7 +422,7 @@ class Shell(object):
 
         cmd = toks[0]
         if cmd == '!':
-            cmd = 'exec'
+            cmd = '__exec__'
 
         return ( cmd, [] if len(toks) == 1 else toks[1:] )
 
@@ -615,7 +623,7 @@ class Shell(object):
         if cmd in self._cmd_map.keys():
             name = self._cmd_map[cmd]
             method = getattr(self, name)
-            return method.__doc__
+            return textwrap.dedent(method.__doc__)
 
         return textwrap.dedent('''\
                        No help message is found for:
@@ -641,8 +649,13 @@ class Shell(object):
         ret = {}
         for name in dir(self):
             obj = getattr(self, name)
-            if iscommand(obj):
+            if iscommand(obj) and isvisiblecommand(obj):
                 for cmd in obj.__command__:
+                    if cmd in ret.keys():
+                        raise PyShellError("The command '{}' already has cmd"
+                                           " method '{}', cannot register a"
+                                           " second method '{}'.".format( \
+                                                    cmd, ret[cmd], obj.__name__))
                     ret[cmd] = obj.__name__
         return ret
 

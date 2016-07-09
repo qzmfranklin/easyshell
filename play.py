@@ -27,10 +27,10 @@ class BarShell(pyshell.Shell):
 class MyShell(pyshell.Shell):
 
     def preloop(self):
-        pass
+        print('Hello! Welcome to MyShell.')
 
     def postloop(self):
-        pass
+        print('Thanks for using MyShell. Bye!')
 
     # 'foo' and 'fsh' enters the FooShell with prompt 'foo-prompt'.
     @pyshell.subshell(FooShell, 'foo', 'fsh')
