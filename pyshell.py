@@ -36,12 +36,14 @@ import traceback
 # Decorators with arguments is a little bit tricky to get right. A good
 # thread on it is:
 #       http://stackoverflow.com/questions/5929107/python-decorators-with-parameters
-def command(*commands, visible = True):
+def command(*commands, is_visible = True, is_internal = True):
     """Decorate a function to be the entry function of commands.
 
     Arguments:
         commands: Names of command that should trigger this function object.
-        visible: This command is visible in tab completions
+        is_visible: This command is visible in tab completions.
+        is_internal: The lexing rule is unchanged even if the parse_line()
+            method is overloaded in the subclasses.
 
     ----------------------------
     Interface of command methods:
@@ -57,8 +59,11 @@ def command(*commands, visible = True):
             pass
     """
     def decorated_func(f):
-        f.__command__ = list(commands)
-        f.__command_visibility__ = visible
+        f.__command__ = {
+                'commands': list(commands),
+                'is_visible': is_visible,
+                'is_internal': is_internal,
+        }
         return f
     return decorated_func
 
@@ -70,9 +75,19 @@ def iscommand(f):
     return hasattr(f, '__command__')
 
 
+def getcommands(f):
+    """Get the list of commands that this function object is registered for."""
+    return f.__command__['commands']
+
+
 def isvisiblecommand(f):
     """Is the function object a visible command or not."""
-    return getattr(f, '__command_visibility__')
+    return getattr(f, '__command__')['is_visible']
+
+
+def isinternalcommand(f):
+    """Is the function object an internal command or not."""
+    return getattr(f, '__command__')['is_internal']
 
 
 def helper(*commands):
@@ -249,7 +264,7 @@ class ShellBase(object):
 
         # Even though __build_XXX_map() methods are class methods, they must be
         # called via self. Otherwise they cannot find the commands.
-        self._cmd_map_all, self._cmd_map_visible = self.__build_cmd_maps()
+        self._cmd_map_all, self._cmd_map_visible, self._cmd_map_internal = self.__build_cmd_maps()
         self._helper_map = self.__build_helper_map()
         self._completer_map = self.__build_completer_map()
 
@@ -324,9 +339,11 @@ class ShellBase(object):
         exit_directive = shell.cmdloop()
         self.print_debug("Enter parent shell '{}': {}".format(self.prompt, exit_directive))
 
-        # Restore history.
+        # Restore history. The subshell could have deleted the history file of
+        # this shell via 'history clearall'.
         readline.clear_history()
-        readline.read_history_file(self.history_fname)
+        if os.path.isfile(self.history_fname):
+            readline.read_history_file(self.history_fname)
 
         return 'end' if exit_directive == 'end' else False
 
@@ -462,8 +479,8 @@ class ShellBase(object):
             readline.insert_text('exit\n')
             readline.redisplay()
             cmd = 'exit'
-        elif toks and toks[0] == '!':
-            cmd = '!'
+        elif toks and toks[0] in self._cmd_map_internal.keys():
+            cmd = toks[0]
             args = toks[1:] if len(toks) > 1 else []
         else:
             cmd, args = self.parse_line(line)
@@ -479,8 +496,6 @@ class ShellBase(object):
     def parse_line(self, line):
         """Parse a line of input.
 
-        Subclasses can override this method to change the lexing rule.
-
         The input line is tokenized using the same rules as the way bash shell
         tokenizes inputs. All quoting and escaping rules from the bash shell
         apply here too.
@@ -490,6 +505,8 @@ class ShellBase(object):
             2.  The input line is completely made of whitespace characters.
             3.  The input line is the EOF character.
             4.  The first token, as tokenized by shlex.split(), is '!'.
+            5.  Internal commands, i.e., commands registered with
+                    is_internal = True
 
         Arguments:
             The line to parse.
@@ -498,6 +515,12 @@ class ShellBase(object):
             A tuple (cmd, args). The first element cmd must be a python3 string.
             The second element is, by default, a list of strings representing
             the arguments, as tokenized by shlex.split().
+
+        How to overload parse_line():
+            1.  The signature of the method must be the same.
+            2.  The return value must be a tuple (cmd, args), where the cmd is
+                a string representing the first token, and args is a list of
+                strings.
         """
         toks = shlex.split(line)
         # Safe to index the 0-th element because this line would have been
@@ -663,14 +686,15 @@ class ShellBase(object):
         elsewhere.
 
         Returns:
-            A tuple (cmd_map, hidden_cmd_map).
+            A tuple (cmd_map, hidden_cmd_map, internal_cmd_map).
         """
         cmd_map_all = {}
         cmd_map_visible = {}
+        cmd_map_internal = {}
         for name in dir(cls):
             obj = getattr(cls, name)
             if iscommand(obj):
-                for cmd in obj.__command__:
+                for cmd in getcommands(obj):
                     if cmd in cmd_map_all.keys():
                         raise PyShellError("The command '{}' already has cmd"
                                            " method '{}', cannot register a"
@@ -679,7 +703,9 @@ class ShellBase(object):
                     cmd_map_all[cmd] = obj.__name__
                     if isvisiblecommand(obj):
                         cmd_map_visible[cmd] = obj.__name__
-        return cmd_map_all, cmd_map_visible
+                    if isinternalcommand(obj):
+                        cmd_map_internal[cmd] = obj.__name__
+        return cmd_map_all, cmd_map_visible, cmd_map_internal
 
     @classmethod
     def __build_helper_map(cls):
@@ -739,7 +765,7 @@ class _BasicShell(ShellBase):
 
     """Implement built-in commands."""
 
-    @command('__exec__', visible = False)
+    @command('!', is_internal = True, is_visible = False)
     def _do_exec(self, cmd, args):
         """Execute a command using subprocess.Popen().
         """
@@ -750,7 +776,7 @@ class _BasicShell(ShellBase):
                 shell = True, stdout = self.stdout)
         proc.wait()
 
-    @command('end', 'exit')
+    @command('end', 'exit', is_internal = True)
     def _do_exit(self, cmd, args):
         """\
         Exit shell.
@@ -776,7 +802,7 @@ class _BasicShell(ShellBase):
         return [ x for x in { 'root', } \
                 if x.startswith(text) ]
 
-    @command('history')
+    @command('history', is_internal = True)
     def _do_history(self, cmd, args):
         """\
         Display history.
@@ -804,15 +830,19 @@ class _BasicShell(ShellBase):
         return [ x for x in { 'clear', 'clearall' } \
                 if x.startswith(text) ]
 
+
 class _DebuggingShell(_BasicShell):
 
     """Debugging shell.
+
+    DISCLAIMER: This debugging shell is still highly experimental.
 
     Lexer is changed. For example, '  foo   dicj didiw  ' is tokenized as
             [ 'foo', '   dicj didiw  ' ]
 
     Available commands:
-            p <id>          Display the content of an object.
+            p               Display object.
+            e               Evaluate python code.
     """
 
     def __init__(self, *args, **kwargs):
@@ -820,19 +850,23 @@ class _DebuggingShell(_BasicShell):
         from _python_completer import Completer
         self.__python_completer = Completer()
 
+    # TODO: This completer is not fully functional.
     @completer('p')
     def _complete_print(self, cmd, arg, text):
         return self.__python_completer.find_matches(text)
 
+    # TODO: This method is not fully implemented yet.
     @command('p')
-    def _do_print(self, cmd, arg):
+    def _do_print(self, cmd, args):
         """\
         Display symbols.
+            p               Display names of inspectable objects.
             p <id>          Display the content of an object.
-
-        TODO: The completer for this command does not work 100% correctl yet.
         """
-        name = arg.strip()
+        name = args[0].strip()
+        if not name:
+            self.stderr.write('TODO: Display names of inspectable objects.\n')
+            return
         try:
             code = textwrap.dedent('''
                     self.stdout.write(name + ':\\n' + textwrap.indent(pprint.pformat({}), '    ') + '\\n')
@@ -841,6 +875,26 @@ class _DebuggingShell(_BasicShell):
         except NameError:
             self.stderr.write("p: name '{}' is not defined\n".format(name))
         self.stdout.flush()
+
+
+    # TODO: Use proper namespace for the dyncamic evaluation. According to the
+    # current implementation existing variables may be overwritten.
+    @command('e')
+    def _do_eval(self, cmd, args):
+        """\
+        Evaluate python code.
+            e <expr>        Evaluate <expr>.
+        """
+        code = args[0].lstrip()
+        if not code:
+            self.stderr.write('e: cannot evalutate empty expression\n')
+            return
+        try:
+            eval(code)
+        except:
+            self.stderr.write('''When executing code '{}', the following error was raised:\n\n'''.format(code))
+            self.stderr.write(textwrap.indent(traceback.format_exc(), '    '))
+
 
     def parse_line(self, line):
         """Parser for the debugging shell.
@@ -853,14 +907,14 @@ class _DebuggingShell(_BasicShell):
             ( 'foo', '   dicj didiw  ' )
 
         Returns:
-            A tuple (cmd, args), where the args is one string containing
-            everything after the cmd as is.
+            A tuple (cmd, args), where the args is a list that consists of one
+            and only one string containing everything after the cmd as is.
         """
         line = line.lstrip()
         toks = shlex.split(line)
         cmd = toks[0]
         arg = line[len(cmd):]
-        return cmd, arg
+        return cmd, [ arg ]
 
 
 class _Shell(_BasicShell):
