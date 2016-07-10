@@ -6,7 +6,7 @@ import traceback
 from .base import command, helper, completer
 from .basic_shell import BasicShell
 
-from ..completer.python_default import Completer
+from ..completer import python_default
 
 class DebuggingShell(BasicShell):
 
@@ -24,7 +24,7 @@ class DebuggingShell(BasicShell):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.__python_completer = Completer()
+        self.__python_completer = python_default.Completer()
 
     # TODO: This completer is not fully functional.
     @completer('p')

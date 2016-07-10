@@ -253,7 +253,9 @@ class _ShellBase(object):
     #   char    |       rationale
     # ----------+--------------------------------------------------------
     #     -     |  Allow commands to contain '-'.
-    _non_delims = '-'
+    # ----------+--------------------------------------------------------
+    #     /\    |  Allow filename matching.
+    _non_delims = '-/\\'
 
     def __init__(self, *,
             debug = False,
@@ -606,7 +608,7 @@ class _ShellBase(object):
 
         # If the line is empty or the user is still inputing the first token,
         # complete with available commands.
-        if not toks or (len(toks) == 1 and text):
+        if not toks or (len(toks) == 1 and text == toks[0]):
             try:
                 self.__completion_candidates = self.__complete_cmds(text)
             except:
@@ -629,6 +631,8 @@ class _ShellBase(object):
                 self.stderr.write('\n')
                 self.stderr.write(traceback.format_exc())
                 self.__completion_candidates = []
+        else:
+            self.__completion_candidates = []
 
         return self.__completion_candidates[state]
 
