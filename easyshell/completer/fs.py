@@ -12,11 +12,16 @@ def find_matches(text):
         return [ text + '/' ]
 
     pattern = path + '*'
-    is_implicit_cwd = path.startswith('/') or path.startswith('./')
+    is_implicit_cwd = not (path.startswith('/') or path.startswith('./'))
     if is_implicit_cwd:
         pattern = './' + pattern
     rawlist = glob.glob(pattern)
-    if is_implicit_cwd:
-        return [ fname[2:] for fname in rawlist ]
-    else:
-        return rawlist
+    ret = []
+    for fname in rawlist:
+        if is_implicit_cwd:
+            fname = fname[2:]
+        if os.path.isdir(fname):
+            ret.append(fname + '/')
+        else:
+            ret.append(fname)
+    return ret
