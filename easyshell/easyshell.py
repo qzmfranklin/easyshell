@@ -228,7 +228,7 @@ class ShellBase(object):
 
     Subclasses in the same module must implement a few command methods and
     completer methods to become a functional shell:
-          - __exec__ (hidden)
+          - ! (hidden)
           - exit
           - history
     """
@@ -956,14 +956,14 @@ class _Shell(_BasicShell):
 
 class Shell(_Shell):
 
-    """Emacs-like recursive shell.
+    """Interactive shell.
 
     Get help:
             <TAB>               Display commands.
             ?<TAB>              Display this message.
             <command>?<TAB>     Display help message for <command>.
 
-    Execute a command in the Linux shell:
+    Execute a real shell command.
             ! <command>         Execute <command> using subprocess.Popen().
     """
     pass

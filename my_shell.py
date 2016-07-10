@@ -21,6 +21,7 @@
 """
 
 import easyshell
+import textwrap
 
 
 # The subshell classes must be defined before being referenced.
@@ -60,7 +61,8 @@ class BarShell(easyshell.Shell):
 class MyShell(easyshell.Shell):
 
     def preloop(self):
-        print('Hello! Welcome to MyShell.')
+        print(textwrap.dedent('''\
+                Hello! Welcome to MyShell. To get help, enter '?' followed by a tab.'''))
 
     def postloop(self):
         print('Thanks for using MyShell. Bye!')
