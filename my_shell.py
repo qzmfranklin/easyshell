@@ -58,30 +58,7 @@ class FooShell(shell.Shell):
 
 
 class BarShell(shell.Shell):
-
-    # 'cat' uses the file-system completer that ships with easyshell.
-    @shell.command('cat')
-    def do_show(self, cmd, args):
-        """\
-        Display content of a file.
-            cat                 Display current directory.
-            cat <file>          Display content of a file.
-        """
-        if not args:
-            self.stderr.write('cat: no arguments\n')
-            return
-        if len(args) > 1:
-            self.stderr.write('cat: too many arguments: {}\n'.format(args))
-            return
-        fname = args[0]
-        with open(fname, 'r', encoding = 'utf8') as f:
-            self.stdout.write(f.read())
-            self.stdout.write('\n')
-
-    @shell.completer('cat')
-    def complete_show(self, cmd, args, text):
-        if not args:
-            return completer.fs.find_matches(text)
+    pass
 
 class MyShell(shell.Shell):
 
@@ -135,6 +112,31 @@ class MyShell(shell.Shell):
             return
         return [ x for x in { '--all', '--no' } \
                 if x.startswith(text) ]
+
+    # 'cat' uses the file-system completer that ships with easyshell.
+    @shell.command('cat')
+    def do_show(self, cmd, args):
+        """\
+        Display content of a file.
+            cat                 Display current directory.
+            cat <file>          Display content of a file.
+        """
+        if not args:
+            self.stderr.write('cat: no arguments\n')
+            return
+        if len(args) > 1:
+            self.stderr.write('cat: too many arguments: {}\n'.format(args))
+            return
+        fname = args[0]
+        with open(fname, 'r', encoding = 'utf8') as f:
+            self.stdout.write(f.read())
+            self.stdout.write('\n')
+
+    @shell.completer('cat')
+    def complete_show(self, cmd, args, text):
+        if not args:
+            return completer.fs.find_matches(text)
+
 
 
 if __name__ == '__main__':

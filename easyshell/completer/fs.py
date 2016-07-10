@@ -7,8 +7,12 @@ def find_matches(text):
     For this completer to function in Unix systems, the readline module must not
     treat \\ and / as delimiters.
     """
-    pattern = os.path.expanduser(text) + '*'
-    is_implicit_cwd = text.startswith('/') or text.startswith('./')
+    path = os.path.expanduser(text)
+    if os.path.isdir(path) and not path.endswith('/'):
+        return [ text + '/' ]
+
+    pattern = path + '*'
+    is_implicit_cwd = path.startswith('/') or path.startswith('./')
     if is_implicit_cwd:
         pattern = './' + pattern
     rawlist = glob.glob(pattern)
