@@ -60,6 +60,7 @@ class FooShell(shell.Shell):
 class BarShell(shell.Shell):
     pass
 
+
 class MyShell(shell.Shell):
 
     def preloop(self):
@@ -113,7 +114,9 @@ class MyShell(shell.Shell):
         return [ x for x in { '--all', '--no' } \
                 if x.startswith(text) ]
 
-    # 'cat' uses the file-system completer that ships with easyshell.
+    # 'cat' uses the file-system completer that ships with easyshell. Note that
+    # the command's name 'cat' does not nesessarily have to relate to the name
+    # of the method, which is 'do_show' in this case.
     @shell.command('cat')
     def do_show(self, cmd, args):
         """\
@@ -132,11 +135,11 @@ class MyShell(shell.Shell):
             self.stdout.write(f.read())
             self.stdout.write('\n')
 
+    # Use the file system completer to complete file names.
     @shell.completer('cat')
     def complete_show(self, cmd, args, text):
         if not args:
             return completer.fs.find_matches(text)
-
 
 
 if __name__ == '__main__':
