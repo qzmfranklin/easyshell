@@ -15,7 +15,7 @@ if __name__ == '__main__':
         version = '0.12',
         description = 'Library for creating recursive shells.',
         long_description = long_description,
-        url = 'https://github.com/qzmfranklin/pyshell',
+        url = 'https://github.com/qzmfranklin/easyshell',
         author = 'Zhongming Qu',
         author_email = 'qzmfranklin@gmail.com',
         keywords = [
