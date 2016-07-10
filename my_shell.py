@@ -42,6 +42,10 @@ class KarShell(easyshell.Shell):
     #       '  p  didj -dd jidd jvi'
     @easyshell.command('p')
     def do_p(self, cmd, arg):
+        """\
+        Please try:
+            panything
+        """
         print("cmd = '{}', arg = '{}'".format(cmd, arg))
 
 

@@ -178,10 +178,10 @@ def iscompleter(f):
 # attribute is unchanged but the repr() function displays the method as
 # 'inner_func'.
 def subshell(shell_cls, *commands, **kwargs):
-    """Decorate a function to launch a ShellBase subshell.
+    """Decorate a function to launch a _ShellBase subshell.
 
     Arguments:
-        shell_cls: A subclass of ShellBase to be launched.
+        shell_cls: A subclass of _ShellBase to be launched.
         commands: Names of command that should trigger this function object.
         kwargs: The keyword arguments for the command decorator method.
 
@@ -207,7 +207,7 @@ def subshell(shell_cls, *commands, **kwargs):
             return self.launch_subshell(shell_cls, args,
                     prompt_display = prompt_display)
         inner_func.__name__ = f.__name__
-        obj = command(*commands)(inner_func, **kwargs) if commands else inner_func
+        obj = command(*commands, **kwargs)(inner_func) if commands else inner_func
         obj.__launch_subshell__ = shell_cls
         return obj
     return decorated_func
@@ -217,7 +217,7 @@ def issubshellcommand(f):
     """Does the function object launch a subshell or not."""
     return hasattr(f, '__launch_subshell__')
 
-class ShellBase(object):
+class _ShellBase(object):
 
     """Base shell class.
 
@@ -259,7 +259,7 @@ class ShellBase(object):
 
         Arguments:
             debug: If True, print_debug() prints to self.stderr.
-            mode_stack: A stack of ShellBase._Mode objects.
+            mode_stack: A stack of _ShellBase._Mode objects.
             root_prompt: The root prompt.
             stdout, stderr: The file objects to write to for output and error.
             temp_dir: The temporary directory to save history files. The default
@@ -288,11 +288,11 @@ class ShellBase(object):
         """Get the doc string of this class.
 
         If this class does not have a doc string or the doc string is empty, try
-        its base classes until the root base class, ShellBase, is reached.
+        its base classes until the root base class, _ShellBase, is reached.
 
         CAVEAT:
             This method assumes that this class and all its super classes are
-            derived from ShellBase or object.
+            derived from _ShellBase or object.
         """
         clz = cls
         while not clz.__doc__:
@@ -320,12 +320,12 @@ class ShellBase(object):
         The doc string of the cmdloop() method explains how shell histories and
         history files are saved and restored.
 
-        The design of the ShellBase class encourage launching of subshells through
+        The design of the _ShellBase class encourage launching of subshells through
         the subshell() decorator function. Nonetheless, the user has the option
         of directly launching subshells via this method.
 
         Arguments:
-            shell_cls: The ShellBase class object to instantiate and launch.
+            shell_cls: The _ShellBase class object to instantiate and launch.
             args: Arguments used to launch this subshell.
             prompt_display: The name of the subshell. The default, None, means
                 to use the shell_cls.__name__.
@@ -340,7 +340,7 @@ class ShellBase(object):
         readline.write_history_file(self.history_fname)
 
         prompt_display = prompt_display if prompt_display else shell_cls.__name__
-        mode = ShellBase._Mode(args, prompt_display)
+        mode = _ShellBase._Mode(args, prompt_display)
         shell = shell_cls(
                 debug = self.debug,
                 mode_stack = self._mode_stack + [ mode ],
@@ -382,7 +382,7 @@ class ShellBase(object):
 
         History:
 
-            ShellBase histories are persistently saved to files, whose name matches
+            _ShellBase histories are persistently saved to files, whose name matches
             the prompt string. For example, if the prompt of a subshell is
             '(Foo-Bar-Kar)$ ', the name of its history file is s-Foo-Bar-Kar.
             The history_fname property encodes this algorithm.
@@ -416,7 +416,7 @@ class ShellBase(object):
         # completer_delims.
         old_completer = readline.get_completer()
         old_delims = readline.get_completer_delims()
-        new_delims = ''.join(list(set(old_delims) - set(ShellBase._non_delims)))
+        new_delims = ''.join(list(set(old_delims) - set(_ShellBase._non_delims)))
         readline.set_completer_delims(new_delims)
 
         # Load the new completer function and start a new history buffer.
@@ -444,7 +444,7 @@ class ShellBase(object):
                 try:
                     line = input(self.prompt).strip()
                 except EOFError:
-                    line = ShellBase.EOF
+                    line = _ShellBase.EOF
 
                 try:
                     exit_directive = self.__exec_line__(line)
@@ -463,7 +463,7 @@ class ShellBase(object):
         return exit_directive
 
     def __exec_line__(self, line):
-        """Execute the input line.
+        r"""Execute the input line.
 
         emptyline: no-op
         unknown command: print error message
@@ -476,7 +476,7 @@ class ShellBase(object):
         Arguments:
             line: A string, representing a line of input from the shell. This
                 string is preprocessed by cmdloop() to convert the EOF character
-                to '\\x04', i.e., 'D' - 64, if the EOF character is the only
+                to '\x04', i.e., 'D' - 64, if the EOF character is the only
                 character from the shell.
         """
         if not line:
@@ -488,7 +488,7 @@ class ShellBase(object):
         if not toks:
             return
 
-        if line == ShellBase.EOF:
+        if line == _ShellBase.EOF:
             # This is a hack to allow the EOF character to behave exactly like
             # typing the 'exit' command.
             readline.insert_text('exit\n')
@@ -687,7 +687,8 @@ class ShellBase(object):
         if cmd in self._cmd_map_all.keys():
             name = self._cmd_map_all[cmd]
             method = getattr(self, name)
-            return textwrap.dedent(method.__doc__)
+            if method.__doc__:
+                return textwrap.dedent(method.__doc__)
 
         return textwrap.dedent('''\
                        No help message is found for:
@@ -697,7 +698,7 @@ class ShellBase(object):
 
 
     ################################################################################
-    # _build_XXX_map() methods are only used by ShellBase.__init__() method.
+    # _build_XXX_map() methods are only used by _ShellBase.__init__() method.
     # TODO: The internal logic looks so similar. Should consider merging these
     # methods.
     ################################################################################
@@ -788,7 +789,7 @@ class ShellBase(object):
         return ret
 
 
-class _BasicShell(ShellBase):
+class BasicShell(_ShellBase):
 
     """Implement built-in commands."""
 
@@ -858,7 +859,7 @@ class _BasicShell(ShellBase):
                 if x.startswith(text) ]
 
 
-class _DebuggingShell(_BasicShell):
+class DebuggingShell(BasicShell):
 
     """Debugging shell.
 
@@ -895,8 +896,8 @@ class _DebuggingShell(_BasicShell):
             self.stderr.write('TODO: Display names of inspectable objects.\n')
             return
         try:
-            code = textwrap.dedent('''
-                    self.stdout.write(name + ':\\n' + textwrap.indent(pprint.pformat({}), '    ') + '\\n')
+            code = textwrap.dedent(r'''
+                    self.stdout.write(name + ':\n' + textwrap.indent(pprint.pformat({}), '    ') + '\n')
                     ''').format(name).strip()
             eval(code, globals(), locals())
         except NameError:
@@ -944,11 +945,11 @@ class _DebuggingShell(_BasicShell):
         return cmd, [ arg, ]
 
 
-class _Shell(_BasicShell):
+class _Shell(BasicShell):
 
-    """Embed _DebuggingShell into _BasicShell."""
+    """Embed DebuggingShell into BasicShell."""
 
-    @subshell(_DebuggingShell, 'debug')
+    @subshell(DebuggingShell, 'debug', is_internal = True)
     def _do_debug(self, cmd, args):
         """Enter the debugging shell."""
         return 'DEBUG'
