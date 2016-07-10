@@ -20,11 +20,11 @@
 """An example shell, with subshell enabled.
 """
 
-import pyshell
+import easyshell
 
 
 # The subshell classes must be defined before being referenced.
-class KarShell(pyshell.Shell):
+class KarShell(easyshell.Shell):
     """The KarShell.
 
     This message shows up when you type 'help'
@@ -39,25 +39,25 @@ class KarShell(pyshell.Shell):
     # To visualize the difference in the lexing rule, try the following input,
     # (actual characters are enclosed within a pair of single quotes):
     #       '  p  didj -dd jidd jvi'
-    @pyshell.command('p')
+    @easyshell.command('p')
     def do_p(self, cmd, arg):
         print("cmd = '{}', arg = '{}'".format(cmd, arg))
 
 
-class FooShell(pyshell.Shell):
+class FooShell(easyshell.Shell):
 
     # 'kar' enters a subshell with a prompt string that depends on the
     # arguments.
-    @pyshell.subshell(KarShell, 'kar')
+    @easyshell.subshell(KarShell, 'kar')
     def do_kar(self, cmd, args):
         return 'karPROMPT' + '@'.join(args)
 
 
-class BarShell(pyshell.Shell):
+class BarShell(easyshell.Shell):
     pass
 
 
-class MyShell(pyshell.Shell):
+class MyShell(easyshell.Shell):
 
     def preloop(self):
         print('Hello! Welcome to MyShell.')
@@ -66,43 +66,43 @@ class MyShell(pyshell.Shell):
         print('Thanks for using MyShell. Bye!')
 
     # 'foo' and 'fsh' enters the FooShell with prompt 'foo-prompt'.
-    @pyshell.subshell(FooShell, 'foo', 'fsh')
+    @easyshell.subshell(FooShell, 'foo', 'fsh')
     def do_foo(self, cmd, args_ignored):
         return 'foo-prompt'
 
     # 'bar' enters the BarShell with prompt 'BarPrompt'.
-    @pyshell.command('bar')
-    @pyshell.subshell(BarShell)
+    @easyshell.command('bar')
+    @easyshell.subshell(BarShell)
     def do_bar(self, cmd, args_ignored):
         return 'BarPrompt'
 
     # The same Shell class, KarShell, can be freely reused.
-    @pyshell.subshell(KarShell, 'kar0')
+    @easyshell.subshell(KarShell, 'kar0')
     def do_kar(self, cmd, args_ignored):
         return 'kar0'
 
     # If this command is called, enters the FooShell. But this command does not
     # directly correspond to any commands.
-    @pyshell.subshell(FooShell)
+    @easyshell.subshell(FooShell)
     def print_and_launch_fsh(self, cmd, args_ignored):
         print('Launch the FooShell manually.')
 
     # 'hello', 'hi', and 'Ha--lo' print 'Hello world!' but does not enter any
     # subshell. Note that the help message, by default, is just the doc string.
-    @pyshell.command('hello', 'hi', 'Ha--lo')
+    @easyshell.command('hello', 'hi', 'Ha--lo')
     def do_hello(self, cmd, args_ignored):
         """Print 'Hello world!'."""
         print('Hello world!')
 
     # Add helper method for 'foo' and 'fsh' commands. The interface is detailed
     # in the doc string of the Shell.__driver_helper() method.
-    @pyshell.helper('foo', 'fsh')
+    @easyshell.helper('foo', 'fsh')
     def help_foo(self, cmd, args_ignored):
         return 'foo (--all|--no), fsh         Enter the foo-prompt subshell'
 
     # Add completer method for 'foo'. The interface is detailed in the doc
     # string of the Shell.__driver_completer() method.
-    @pyshell.completer('foo')
+    @easyshell.completer('foo')
     def complete_foo(self, cmd, args, text):
         if args:
             return
@@ -116,7 +116,7 @@ if __name__ == '__main__':
             root_prompt = 'PlayBoy',
 
             # Supply a directory name to have persistent history.
-            temp_dir = '/tmp/pyshell',
+            temp_dir = '/tmp/easyshell',
 
             # Debug mode prints debug information to self.stderr.
             debug = False,

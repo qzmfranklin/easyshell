@@ -874,7 +874,7 @@ class _DebuggingShell(_BasicShell):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        from _python_completer import Completer
+        from ._python_completer import Completer
         self.__python_completer = Completer()
 
     # TODO: This completer is not fully functional.
