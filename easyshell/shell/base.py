@@ -19,12 +19,9 @@
 """A generic class to build line-oriented command interpreters.
 """
 
-import copy
 import os
 import readline
 import shlex
-import shutil
-import string
 import subprocess
 import sys
 import tempfile

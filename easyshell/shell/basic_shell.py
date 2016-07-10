@@ -1,4 +1,6 @@
+import os
 import readline
+import shutil
 import subprocess
 import textwrap
 
