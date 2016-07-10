@@ -331,8 +331,9 @@ class _ShellBase(object):
                 to use the shell_cls.__name__.
 
         Returns:
-            'end': Inform the parent shell to keep exiting until the root shell
+            'root': Inform the parent shell to keep exiting until the root shell
                 is reached.
+            'all': Exit the the command line.
             False, None, or anything that are evaluated as False: Inform the
                 parent shell to stay in that parent shell.
         """
@@ -360,7 +361,8 @@ class _ShellBase(object):
         if os.path.isfile(self.history_fname):
             readline.read_history_file(self.history_fname)
 
-        return 'end' if exit_directive == 'end' else False
+        if exit_directive is not True:
+            return exit_directive
 
     def preloop(self):
         pass
@@ -375,8 +377,9 @@ class _ShellBase(object):
         main loop, respectively.
 
         Returns:
-            'end': Inform the parent shell to to keep exiting until the root
+            'root': Inform the parent shell to to keep exiting until the root
                 shell is reached.
+            'all': Exit all the way back the the command line shell.
             False, None, or anything that are evaluated as False: Exit this
                 shell, enter the parent shell.
 
@@ -428,19 +431,15 @@ class _ShellBase(object):
         # main loop
         try:
             # The exit_directive could be one { True, False, 'end' }.
-            #       True:   Leave this shell, enter the parent shell.
-            #       False:  Continue with the loop.
-            #       'end':  Exit to the root shell.
+            #       True    Leave this shell, enter the parent shell.
+            #       False   Continue with the loop.
+            #       'root'  Exit to the root shell.
+            #       'all'   Exit to the command line.
             # TODO: For the above logic, the if-elif statements in the while
             # loop seems a bit convoluted.  Maybe it could be cleaner.
-            exit_directive = False
             self.preloop()
             while True:
-                if exit_directive == 'end':
-                    if self._mode_stack:
-                        break
-                elif exit_directive == True:
-                    break
+                exit_directive = False
                 try:
                     line = input(self.prompt).strip()
                 except EOFError:
@@ -450,6 +449,11 @@ class _ShellBase(object):
                     exit_directive = self.__exec_line__(line)
                 except:
                     self.stderr.write(traceback.format_exc())
+
+                if self._mode_stack and exit_directive == 'root':
+                    break
+                if exit_directive in { 'all', True, }:
+                    break
         finally:
             self.postloop()
             # Restore the completer function, save the history, and restore old
@@ -810,24 +814,38 @@ class BasicShell(_ShellBase):
         Exit shell.
             exit | C-D          Exit to the parent shell.
             exit root | end     Exit to the root shell.
+            exit all            Exit to the command line.
         """
         if cmd == 'end':
-            return 'end'
-        if args and args[0] == 'root':
-            return 'end'
-        elif not args:
+            if not args:
+                return 'root'
+            else:
+                self.stderr.write(textwrap.dedent('''\
+                        end: unrecognized arguments: {}
+                        ''')).format(args)
+
+        # Hereafter, cmd == 'exit'.
+        if not args:
             return True
-        else:
-            self.stdout.write(textwrap.dedent('''\
-                    exit: unrecognized arguments: {}
-                    ''')).format(subprocess.list2cmdline(args))
+        if len(args) > 1:
+            self.stderr.write(textwrap.dedent('''\
+                    exit: too many arguments: {}
+                    ''')).format(args)
+        exit_directive = args[0]
+        if exit_directive == 'root':
+            return 'root'
+        if exit_directive == 'all':
+            return 'all'
+        self.stderr.write(textwrap.dedent('''\
+                exit: unrecognized arguments: {}
+                ''')).format(args)
 
     @completer('exit')
     def _complete_exit(self, cmd, args, text):
         """Find candidates for the 'exit' command."""
         if args:
             return
-        return [ x for x in { 'root', } \
+        return [ x for x in { 'root', 'all', } \
                 if x.startswith(text) ]
 
     @command('history', is_internal = True)
