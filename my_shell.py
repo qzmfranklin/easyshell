@@ -20,12 +20,12 @@
 """An example shell, with subshell enabled.
 """
 
-import easyshell
+from easyshell import shell
 import textwrap
 
 
 # The subshell classes must be defined before being referenced.
-class KarShell(easyshell.Shell):
+class KarShell(shell.Shell):
     """The KarShell.
 
     This message shows up when you type 'help'
@@ -40,7 +40,7 @@ class KarShell(easyshell.Shell):
     # To visualize the difference in the lexing rule, try the following input,
     # (actual characters are enclosed within a pair of single quotes):
     #       '  p  didj -dd jidd jvi'
-    @easyshell.command('p')
+    @shell.command('p')
     def do_p(self, cmd, arg):
         """\
         Please try:
@@ -49,20 +49,20 @@ class KarShell(easyshell.Shell):
         print("cmd = '{}', arg = '{}'".format(cmd, arg))
 
 
-class FooShell(easyshell.Shell):
+class FooShell(shell.Shell):
 
     # 'kar' enters a subshell with a prompt string that depends on the
     # arguments.
-    @easyshell.subshell(KarShell, 'kar')
+    @shell.subshell(KarShell, 'kar')
     def do_kar(self, cmd, args):
         return 'karPROMPT' + '@'.join(args)
 
 
-class BarShell(easyshell.Shell):
+class BarShell(shell.Shell):
     pass
 
 
-class MyShell(easyshell.Shell):
+class MyShell(shell.Shell):
 
     def preloop(self):
         print(textwrap.dedent('''\
@@ -72,43 +72,43 @@ class MyShell(easyshell.Shell):
         print('Thanks for using MyShell. Bye!')
 
     # 'foo' and 'fsh' enters the FooShell with prompt 'foo-prompt'.
-    @easyshell.subshell(FooShell, 'foo', 'fsh')
+    @shell.subshell(FooShell, 'foo', 'fsh')
     def do_foo(self, cmd, args_ignored):
         return 'foo-prompt'
 
     # 'bar' enters the BarShell with prompt 'BarPrompt'.
-    @easyshell.command('bar')
-    @easyshell.subshell(BarShell)
+    @shell.command('bar')
+    @shell.subshell(BarShell)
     def do_bar(self, cmd, args_ignored):
         return 'BarPrompt'
 
     # The same Shell class, KarShell, can be freely reused.
-    @easyshell.subshell(KarShell, 'kar0')
+    @shell.subshell(KarShell, 'kar0')
     def do_kar(self, cmd, args_ignored):
         return 'kar0'
 
     # If this command is called, enters the FooShell. But this command does not
     # directly correspond to any commands.
-    @easyshell.subshell(FooShell)
+    @shell.subshell(FooShell)
     def print_and_launch_fsh(self, cmd, args_ignored):
         print('Launch the FooShell manually.')
 
     # 'hello', 'hi', and 'Ha--lo' print 'Hello world!' but does not enter any
     # subshell. Note that the help message, by default, is just the doc string.
-    @easyshell.command('hello', 'hi', 'Ha--lo')
+    @shell.command('hello', 'hi', 'Ha--lo')
     def do_hello(self, cmd, args_ignored):
         """Print 'Hello world!'."""
         print('Hello world!')
 
     # Add helper method for 'foo' and 'fsh' commands. The interface is detailed
     # in the doc string of the Shell.__driver_helper() method.
-    @easyshell.helper('foo', 'fsh')
+    @shell.helper('foo', 'fsh')
     def help_foo(self, cmd, args_ignored):
         return 'foo (--all|--no), fsh         Enter the foo-prompt subshell'
 
     # Add completer method for 'foo'. The interface is detailed in the doc
     # string of the Shell.__driver_completer() method.
-    @easyshell.completer('foo')
+    @shell.completer('foo')
     def complete_foo(self, cmd, args, text):
         if args:
             return
@@ -122,7 +122,7 @@ if __name__ == '__main__':
             root_prompt = 'PlayBoy',
 
             # Supply a directory name to have persistent history.
-            temp_dir = '/tmp/easyshell',
+            temp_dir = '/tmp/shell',
 
             # Debug mode prints debug information to self.stderr.
             debug = False,
