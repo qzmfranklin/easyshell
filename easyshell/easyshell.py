@@ -178,7 +178,12 @@ def iscompleter(f):
 # attribute is unchanged but the repr() function displays the method as
 # 'inner_func'.
 def subshell(shell_cls, *commands, **kwargs):
-    """Decorate a function to launch a _ShellBase subshell.
+    """Decorate a function to conditionally launch a _ShellBase subshell.
+
+    The additional prompt string is the return value of the method. If it is an
+    empty string, or anything that evaluates to None/False, the subshell is not
+    launched. This makes sense as the subshell must have a different prompt from
+    its parent shell.
 
     Arguments:
         shell_cls: A subclass of _ShellBase to be launched.
@@ -204,9 +209,12 @@ def subshell(shell_cls, *commands, **kwargs):
     def decorated_func(f):
         def inner_func(self, cmd, args):
             prompt_display = f(self, cmd, args)
+            if not prompt_display:
+                return
             return self.launch_subshell(shell_cls, args,
                     prompt_display = prompt_display)
         inner_func.__name__ = f.__name__
+        inner_func.__doc__ = f.__doc__
         obj = command(*commands, **kwargs)(inner_func) if commands else inner_func
         obj.__launch_subshell__ = shell_cls
         return obj
@@ -236,7 +244,8 @@ class _ShellBase(object):
     class _Mode(object):
         """Stack mode information used when entering and leaving a subshell.
         """
-        def __init__(self, args, prompt_display):
+        def __init__(self, *, shell, args, prompt_display):
+            self.shell = shell
             self.args = args
             self.prompt_display = prompt_display
 
@@ -341,7 +350,11 @@ class _ShellBase(object):
         readline.write_history_file(self.history_fname)
 
         prompt_display = prompt_display if prompt_display else shell_cls.__name__
-        mode = _ShellBase._Mode(args, prompt_display)
+        mode = _ShellBase._Mode(
+                shell = self,
+                args = args,
+                prompt_display = prompt_display,
+        )
         shell = shell_cls(
                 debug = self.debug,
                 mode_stack = self._mode_stack + [ mode ],
@@ -969,9 +982,38 @@ class _Shell(BasicShell):
 
     @subshell(DebuggingShell, 'debug', is_internal = True)
     def _do_debug(self, cmd, args):
-        """Enter the debugging shell."""
-        return 'DEBUG'
+        """\
+        Enter the debugging shell.
+            debug               Show current debugging status, i.e, on/off.
+            debug {on,off}      Turn on/off debugging info.
+            debug shell         Enter debugging shell.
+            debug toggle        Toggle current debugging status.
+        """
+        if not args:
+            sys.stdout.write('on' if self.debug else 'off')
+            sys.stdout.write('\n')
+            return
+        if len(args) > 1:
+            self.stderr.write('debug: too many arguments: {}\n'.format(args))
+            return
+        action = args[0]
+        if action == 'on':
+            self.debug = True
+        elif action == 'off':
+            self.debug = False
+        elif action == 'shell':
+            return 'DEBUG'
+        elif action == 'toggle':
+            self.debug = not self.debug
+        else:
+            self.stderr.write('debug: unrecognized argument: {}\n'.format(action))
 
+    @completer('debug')
+    def _complete_debug(self, cmd, args, text):
+        if args:
+            return []
+        return [ x for x in { 'on', 'off', 'shell', 'toggle', } \
+                if x.startswith(text) ]
 
 class Shell(_Shell):
 
