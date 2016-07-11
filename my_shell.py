@@ -20,8 +20,10 @@
 """An example shell, with subshell enabled.
 """
 
-from easyshell import completer, shell
+import os
 import textwrap
+
+from easyshell import completer, shell
 
 # The subshell classes must be defined before being referenced.
 class KarShell(shell.Shell):
@@ -58,7 +60,12 @@ class FooShell(shell.Shell):
 
 
 class BarShell(shell.Shell):
-    pass
+
+    # Any unicode string can be a command.
+    @shell.command('hello', '你好', 'こんにちは', 'Bonjour', 'Χαίρετε', 'Halo-😜')
+    def do_hello(self, cmd, args_ignored):
+        """Print 'Hello world!'."""
+        print('Hello world!')
 
 
 class MyShell(shell.Shell):
@@ -75,35 +82,11 @@ class MyShell(shell.Shell):
     def do_foo(self, cmd, args_ignored):
         return 'foo-prompt'
 
-    # 'bar' enters the BarShell with prompt 'BarPrompt'.
-    @shell.command('bar')
-    @shell.subshell(BarShell)
-    def do_bar(self, cmd, args_ignored):
-        return 'BarPrompt'
-
-    # The same Shell class, KarShell, can be freely reused.
-    @shell.subshell(KarShell, 'kar0')
-    def do_kar(self, cmd, args_ignored):
-        return 'kar0'
-
-    # If this command is called, enters the FooShell. But this command does not
-    # directly correspond to any commands.
-    @shell.subshell(FooShell)
-    def print_and_launch_fsh(self, cmd, args_ignored):
-        print('Launch the FooShell manually.')
-
-    # 'hello', 'hi', and 'Ha--lo' print 'Hello world!' but does not enter any
-    # subshell. Note that the help message, by default, is just the doc string.
-    @shell.command('hello', 'hi', 'Ha--lo')
-    def do_hello(self, cmd, args_ignored):
-        """Print 'Hello world!'."""
-        print('Hello world!')
-
     # Add helper method for 'foo' and 'fsh' commands. The interface is detailed
     # in the doc string of the Shell.__driver_helper() method.
     @shell.helper('foo', 'fsh')
     def help_foo(self, cmd, args_ignored):
-        return 'foo (--all|--no), fsh         Enter the foo-prompt subshell'
+        return 'foo (--all|--no), fsh         Enter the foo-prompt subshell.'
 
     # Add completer method for 'foo'. The interface is detailed in the doc
     # string of the Shell.__driver_completer() method.
@@ -114,6 +97,16 @@ class MyShell(shell.Shell):
         return [ x for x in { '--all', '--no' } \
                 if x.startswith(text) ]
 
+    # 'bar' enters the BarShell with prompt 'BarPrompt'.
+    @shell.subshell(BarShell, 'bar')
+    def do_bar(self, cmd, args_ignored):
+        return 'BarPrompt'
+
+    # The same Shell class, KarShell, can be freely reused.
+    @shell.subshell(KarShell, 'kar')
+    def do_kar(self, cmd, args_ignored):
+        return 'kar-🐶'
+
     # 'cat' uses the file-system completer that ships with easyshell. Note that
     # the command's name 'cat' does not nesessarily have to relate to the name
     # of the method, which is 'do_show' in this case.
@@ -121,11 +114,12 @@ class MyShell(shell.Shell):
     def do_show(self, cmd, args):
         """\
         Display content of a file.
-            cat                 Display current directory.
+            cat                 Display current working directory.
             cat <file>          Display content of a file.
         """
         if not args:
-            self.stderr.write('cat: no arguments\n')
+            self.stdout.write(os.getcwd())
+            self.stdout.write('\n')
             return
         if len(args) > 1:
             self.stderr.write('cat: too many arguments: {}\n'.format(args))

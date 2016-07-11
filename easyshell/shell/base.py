@@ -342,6 +342,7 @@ class _ShellBase(object):
             'all': Exit the the command line.
             False, None, or anything that are evaluated as False: Inform the
                 parent shell to stay in that parent shell.
+            An integer indicating the depth of shell to exit to. 0 = root shell.
         """
         # Save history of the current shell.
         readline.write_history_file(self.history_fname)
@@ -371,7 +372,7 @@ class _ShellBase(object):
         if os.path.isfile(self.history_fname):
             readline.read_history_file(self.history_fname)
 
-        if exit_directive is not True:
+        if not exit_directive is True:
             return exit_directive
 
     def preloop(self):
@@ -392,6 +393,7 @@ class _ShellBase(object):
             'all': Exit all the way back the the command line shell.
             False, None, or anything that are evaluated as False: Exit this
                 shell, enter the parent shell.
+            An integer: The depth of the shell to exit to. 0 = root shell.
 
         History:
 
@@ -440,13 +442,13 @@ class _ShellBase(object):
 
         # main loop
         try:
-            # The exit_directive could be one { True, False, 'end' }.
-            #       True    Leave this shell, enter the parent shell.
-            #       False   Continue with the loop.
-            #       'root'  Exit to the root shell.
-            #       'all'   Exit to the command line.
-            # TODO: For the above logic, the if-elif statements in the while
-            # loop seems a bit convoluted.  Maybe it could be cleaner.
+            # The exit_directive:
+            #       True        Leave this shell, enter the parent shell.
+            #       False       Continue with the loop.
+            #       'root'      Exit to the root shell.
+            #       'all'       Exit to the command line.
+            #       an integer  The depth of the shell to exit to. 0 = root
+            #                   shell. Negative number is taken as error.
             self.preloop()
             while True:
                 exit_directive = False
@@ -460,6 +462,11 @@ class _ShellBase(object):
                 except:
                     self.stderr.write(traceback.format_exc())
 
+                if type(exit_directive) is int:
+                    if len(self._mode_stack) > exit_directive:
+                        break
+                    if len(self._mode_stack) == exit_directive:
+                        continue
                 if self._mode_stack and exit_directive == 'root':
                     break
                 if exit_directive in { 'all', True, }:

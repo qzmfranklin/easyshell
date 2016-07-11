@@ -1,3 +1,4 @@
+import math
 import os
 import readline
 import shutil
@@ -8,7 +9,7 @@ from .base import _ShellBase, command, helper, completer
 
 class BasicShell(_ShellBase):
 
-    """Implement built-in commands."""
+    """Shell with a few built-in commands."""
 
     @command('!', is_internal = True, is_visible = False)
     def _do_exec(self, cmd, args):
@@ -89,4 +90,53 @@ class BasicShell(_ShellBase):
         return [ x for x in { 'clear', 'clearall' } \
                 if x.startswith(text) ]
 
+    @command('stack', is_internal = True)
+    def _do_stack(self, cmd, args):
+        """\
+        Manage the shell stack.
+            stack               Display the stack.
+            stack <depth>       Exit to the stack by its depth.
+        """
+        if not args:
+            self.__dump_stack()
+            return
+        if len(args) > 1:
+            self.stderr.write('stack: too many arguments: {}\n'.format(args))
+            return
+        try:
+            depth = int(args[0])
+        except ValueError:
+            self.stderr.write("stack: depth is not an integer: '{}'\n".format(args[0]))
+            return
+        if depth < 0:
+            self.stderr.write('stack: negative depth: {}\n'.format(depth))
+            return
+        return depth
 
+    def __dump_stack(self):
+        """Dump the shell stack in a human friendly way.
+
+        An example output is:
+                0    PlayBoy
+                1    └── foo-prompt: MyShell@[]
+                2        └── karPROMPT: FooShell@[]
+                3            └── DEBUG: KarShell@['shell']
+        """
+        maxdepth = len(self._mode_stack)
+        maxdepth_strlen = len(str(maxdepth))
+        index_width = 4 - (-maxdepth_strlen) % 4 + 4
+        index_str = lambda i: '{:<{}d}'.format(i, index_width)
+
+        self.stdout.write(index_str(0) + self.root_prompt)
+        self.stdout.write('\n')
+
+        tree_prefix = '└── '
+        for i in range(maxdepth):
+            index_prefix = index_str(i + 1)
+            whitespace_prefix = ' ' * len(tree_prefix) * i
+            mode = self._mode_stack[i]
+            line = index_prefix + whitespace_prefix + \
+                    tree_prefix + mode.prompt_display + \
+                    ': {}@{}'.format(mode.shell.__class__.__name__, mode.args)
+            self.stdout.write(line)
+            self.stdout.write('\n')
