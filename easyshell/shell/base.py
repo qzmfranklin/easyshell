@@ -206,7 +206,7 @@ def subshell(shell_cls, *commands, **kwargs):
             prompt_display = f(self, cmd, args)
             if not prompt_display:
                 return
-            return self.launch_subshell(shell_cls, args,
+            return self.launch_subshell(shell_cls, cmd, args,
                     prompt_display = prompt_display)
         inner_func.__name__ = f.__name__
         inner_func.__doc__ = f.__doc__
@@ -239,8 +239,9 @@ class _ShellBase(object):
     class _Mode(object):
         """Stack mode information used when entering and leaving a subshell.
         """
-        def __init__(self, *, shell, args, prompt_display):
+        def __init__(self, *, shell, cmd, args, prompt_display):
             self.shell = shell
+            self.cmd = cmd
             self.args = args
             self.prompt_display = prompt_display
 
@@ -320,7 +321,7 @@ class _ShellBase(object):
         if self.debug:
             print(msg, file = self.stderr)
 
-    def launch_subshell(self, shell_cls, args, *, prompt_display = None):
+    def launch_subshell(self, shell_cls, cmd, args, *, prompt_display = None):
         """Launch a subshell.
 
         The doc string of the cmdloop() method explains how shell histories and
@@ -350,6 +351,7 @@ class _ShellBase(object):
         prompt_display = prompt_display if prompt_display else shell_cls.__name__
         mode = _ShellBase._Mode(
                 shell = self,
+                cmd = cmd,
                 args = args,
                 prompt_display = prompt_display,
         )

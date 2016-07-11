@@ -142,6 +142,6 @@ class BasicShell(_ShellBase):
             mode = self._mode_stack[i]
             line = index_prefix + whitespace_prefix + \
                     tree_prefix + mode.prompt_display + \
-                    ': {}@{}'.format(mode.shell.__class__.__name__, mode.args)
+                    ': {}@{}'.format(mode.cmd, mode.args)
             self.stdout.write(line)
             self.stdout.write('\n')
