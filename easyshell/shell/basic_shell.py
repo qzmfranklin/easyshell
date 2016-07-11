@@ -113,6 +113,11 @@ class BasicShell(_ShellBase):
             return
         return depth
 
+    @completer('stack')
+    def _complete_stack(self, cmd, args, text):
+        if not args:
+            return [ str(i) for i in range(len(self._mode_stack) + 1) ]
+
     def __dump_stack(self):
         """Dump the shell stack in a human friendly way.
 
