@@ -15,7 +15,7 @@ class BasicShell(_ShellBase):
         """Execute a command using subprocess.Popen().
         """
         if not args:
-            self.stderr.write("run: empty command\n")
+            self.stderr.write("execute: empty command\n")
             return
         proc = subprocess.Popen(subprocess.list2cmdline(args),
                 shell = True, stdout = self.stdout)

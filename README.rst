@@ -26,4 +26,8 @@ You can try out the example shell that ships with the source code::
 Usage Examples
 =======================
 
-    See the example file my_shell.py.
+See the example file my_shell.py.
+
+Here is a demo:
+
+.. image:: https://raw.githubusercontent.com/qzmfranklin/easyshell/qzmfranklin-gif/tty.gif
