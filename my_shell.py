@@ -72,7 +72,9 @@ class MyShell(shell.Shell):
 
     def preloop(self):
         print(textwrap.dedent('''\
-                Hello! Welcome to MyShell. To get help, enter '?' followed by a tab.'''))
+                Hello! Welcome to MyShell.
+                Enter '?' followed by a tab to get help.
+                '''))
 
     def postloop(self):
         print('Thanks for using MyShell. Bye!')
@@ -103,8 +105,12 @@ class MyShell(shell.Shell):
         return 'BarPrompt'
 
     # The same Shell class, KarShell, can be freely reused.
-    @shell.subshell(KarShell, 'kar')
+    @shell.subshell(KarShell, 'kar-🐶')
     def do_kar(self, cmd, args_ignored):
+        """\
+        Enter the kar-🐶 subshell.
+        Yes, emojis can be part of a command.
+        """
         return 'kar-🐶'
 
     # 'cat' uses the file-system completer that ships with easyshell. Note that

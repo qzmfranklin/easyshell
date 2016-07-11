@@ -123,9 +123,9 @@ class BasicShell(_ShellBase):
 
         An example output is:
                 0    PlayBoy
-                1    └── foo-prompt: MyShell@[]
-                2        └── karPROMPT: FooShell@[]
-                3            └── DEBUG: KarShell@['shell']
+                1    └── foo-prompt: foo@[]
+                2        └── karPROMPT: kar@[]
+                3            └── DEBUG: debug@['shell']
         """
         maxdepth = len(self._mode_stack)
         maxdepth_strlen = len(str(maxdepth))
