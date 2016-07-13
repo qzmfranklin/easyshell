@@ -1,29 +1,13 @@
-#!/usr/bin/env python3
-
-#  A python3 library for creating recursive shells.
-#
-#  Copyright (C) 2016,  Zhongming Qu
-#
-#  This program is free software: you can redistribute it and/or modify
-#  it under the terms of the GNU General Public License as published by
-#  the Free Software Foundation, either version 3 of the License, or
-#  (at your option) any later version.
-#
-#  This program is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#  GNU General Public License for more details.
-#
-#  You should have received a copy of the GNU General Public License
-#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
 """An example shell, with subshell enabled.
 """
 
+import argparse
 import os
+import sys
+import subprocess
 import textwrap
 
-from easyshell import completer, shell
+from . import completer, shell
 
 # The subshell classes must be defined before being referenced.
 class KarShell(shell.Shell):
@@ -143,13 +127,47 @@ class MyShell(shell.Shell):
 
 
 if __name__ == '__main__':
-    MyShell(
-            # Supply a custom root prompt.
-            root_prompt = 'PlayBoy',
 
-            # Supply a directory name to have persistent history.
-            temp_dir = '/tmp/shell',
+    def __update_sp(sp):
+        def __stdin(s):
+            if s is None:
+                return None
+            if s == '-':
+                return sys.stdin
+            return open(s, 'r', encoding = 'utf8')
+        sp.add_argument('--root-prompt',
+                metavar = 'STR',
+                default = 'PlayBoy',
+                help = 'the root prompt string')
+        sp.add_argument('--temp-dir',
+                metavar = 'DIR',
+                default = '/tmp/shell',
+                help = 'the directory to save history files')
+        sp.add_argument('--debug',
+                action = 'store_true',
+                help = 'turn debug infomation on')
+        sp.add_argument('file',
+                metavar = 'FILE',
+                nargs = '?',
+                type = __stdin,
+                help = "execute script in non-interactive mode. '-' = stdin")
 
-            # Debug mode prints debug information to self.stderr.
-            debug = False,
-    ).cmdloop()
+    parser = argparse.ArgumentParser(description = __doc__,
+            formatter_class = argparse.ArgumentDefaultsHelpFormatter)
+    __update_sp(parser)
+    args = parser.parse_args()
+
+    if args.file:
+        proc = subprocess.Popen(
+                ['python3', '-m', 'easyshell'],
+                stdin = subprocess.PIPE,
+                stdout = subprocess.DEVNULL,
+                stderr = sys.stderr,
+                universal_newlines = True,
+        )
+        proc.communicate(args.file.read(), timeout = 5)
+        proc.wait(timeout = 60)
+    else:
+        d = vars(args)
+        del d['file']
+        MyShell(**d).cmdloop()
