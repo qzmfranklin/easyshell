@@ -19,6 +19,7 @@
 """A generic class to build line-oriented command interpreters.
 """
 
+import multiprocessing
 import os
 import readline
 import shlex
@@ -256,8 +257,10 @@ class _ShellBase(object):
     _non_delims = '-/\\'
 
     def __init__(self, *,
+            batch_mode = False,
             debug = False,
             mode_stack = [],
+            pipe_end = None,
             root_prompt = 'root',
             stdout = sys.stdout,
             stderr = sys.stderr,
@@ -265,13 +268,17 @@ class _ShellBase(object):
         """Instantiate a line-oriented interpreter framework.
 
         Arguments:
+            batch_mode: stdin is superseded by the pipe_end.
             debug: If True, print_debug() prints to self.stderr.
             mode_stack: A stack of _ShellBase._Mode objects.
+            pipe_end: The receiving end of the pipe when run in batch mode.
             root_prompt: The root prompt.
             stdout, stderr: The file objects to write to for output and error.
             temp_dir: The temporary directory to save history files. The default
                 value, None, means to generate such a directory.
         """
+        self.batch_mode = batch_mode
+        self._pipe_end = pipe_end
         self.debug = debug
         self.stdout = stdout
         self.stderr = stderr
@@ -356,8 +363,10 @@ class _ShellBase(object):
                 prompt_display = prompt_display,
         )
         shell = shell_cls(
+                batch_mode = self.batch_mode,
                 debug = self.debug,
                 mode_stack = self._mode_stack + [ mode ],
+                pipe_end = self._pipe_end,
                 root_prompt = self.root_prompt,
                 stdout = self.stdout,
                 stderr = self.stderr,
@@ -376,6 +385,21 @@ class _ShellBase(object):
 
         if not exit_directive is True:
             return exit_directive
+
+    def batch_string(self, content):
+        """Process a string in batch mode.
+
+        Arguments:
+            content: A unicode string representing the content to be processed.
+        """
+        pipe_send, pipe_recv = multiprocessing.Pipe()
+        self._pipe_end = pipe_recv
+        proc = multiprocessing.Process(target = self.cmdloop)
+        for line in content.split('\n'):
+            pipe_send.send(line)
+        pipe_send.close()
+        proc.start()
+        proc.join()
 
     def preloop(self):
         pass
@@ -455,7 +479,10 @@ class _ShellBase(object):
             while True:
                 exit_directive = False
                 try:
-                    line = input(self.prompt).strip()
+                    if self.batch_mode:
+                        line = self._pipe_end.recv()
+                    else:
+                        line = input(self.prompt).strip()
                 except EOFError:
                     line = _ShellBase.EOF
 
