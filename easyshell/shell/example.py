@@ -1,7 +1,9 @@
 import os
 import textwrap
 
-from . import completer, shell
+import easycompleter
+
+from . import shell
 
 # The subshell classes must be defined before being referenced.
 class KarShell(shell.Shell):
@@ -118,4 +120,4 @@ class MyShell(shell.Shell):
     @shell.completer('cat')
     def complete_show(self, cmd, args, text):
         if not args:
-            return completer.fs.find_matches(text)
+            return easycompleter.fs.find_matches(text)
