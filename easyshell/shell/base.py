@@ -239,6 +239,13 @@ class _ShellBase(object):
 
     class _Mode(object):
         """Stack mode information used when entering and leaving a subshell.
+
+        Attributes:
+            shell: This subshell.
+            cmd: The command, as a unicode string, that was issued in the parent
+                shell for entering this subshell.
+            args: Any additional arguments that were issued with the @cmd.
+            prompt_display: The unicode string to add to the prompt.
         """
         def __init__(self, *, shell, cmd, args, prompt_display):
             self.shell = shell
@@ -253,8 +260,10 @@ class _ShellBase(object):
     # ----------+--------------------------------------------------------
     #     -     |  Allow commands to contain '-'.
     # ----------+--------------------------------------------------------
-    #     /\    |  Allow filename matching.
-    _non_delims = '-/\\'
+    #     /\    |  Allow generic filename matching.
+    # ----------+--------------------------------------------------------
+    #     ~     |  Allow '~' to be expanded to $HOME.
+    _non_delims = r'-/\~'
 
     def __init__(self, *,
             batch_mode = False,
