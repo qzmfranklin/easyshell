@@ -5,7 +5,7 @@ import argparse
 import sys
 import subprocess
 
-from .shell.example import MyShell
+from .example_shell import MyShell
 from .main import update_parser
 
 if __name__ == '__main__':
