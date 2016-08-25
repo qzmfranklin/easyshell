@@ -636,8 +636,10 @@ class _ShellBase(object):
 
         Arguments:
             toks: A list of tokens, tokenized from the original input line.
-            text: A string, the text to be replaced if a completion candidate is chosen.
-            state: An integer, the index of the candidate out of the list of candidates.
+            text: A string, the text to be replaced if a completion candidate is
+                chosen.
+            state: An integer, the index of the candidate out of the list of
+                candidates.
 
         Returns:
             A string, the candidate.
@@ -729,7 +731,6 @@ class _ShellBase(object):
 
         Arguments:
             toks: The list of command followed by its arguments.
-            fp: The file-like object to write help messages to.
 
         Returns:
             The help message.
