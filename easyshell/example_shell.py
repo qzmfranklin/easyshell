@@ -43,7 +43,8 @@ class BarShell(shell.Shell):
 
     # Any unicode string can be a command.
     @shell.command('hello', \
-            '你好', 'こんにちは', 'Bonjour', 'Χαίρετε', 'Halo-😜')
+            '你好', 'こんにちは', 'Bonjour', 'Χαίρετε', 'Halo-😜',
+            nargs = 0)
     def do_hello(self, cmd, args_ignored):
         """Print 'Hello world!'."""
         print('Hello world!')
@@ -61,7 +62,7 @@ class MyShell(shell.Shell):
         print('Thanks for using MyShell. Bye!')
 
     # 'foo' and 'fsh' enters the FooShell with prompt 'foo-prompt'.
-    @shell.subshell(FooShell, 'foo', 'fsh')
+    @shell.subshell(FooShell, 'foo', 'fsh', nargs = 0)
     def do_foo(self, cmd, args_ignored):
         return 'foo-prompt'
 
@@ -81,12 +82,12 @@ class MyShell(shell.Shell):
                 if x.startswith(text) ]
 
     # 'bar' enters the BarShell with prompt 'BarPrompt'.
-    @shell.subshell(BarShell, 'bar')
+    @shell.subshell(BarShell, 'bar', nargs = 0)
     def do_bar(self, cmd, args_ignored):
         return 'BarPrompt'
 
     # The same Shell class, KarShell, can be freely reused.
-    @shell.subshell(KarShell, 'kar-🐶')
+    @shell.subshell(KarShell, 'kar-🐶', nargs = 0)
     def do_kar(self, cmd, args_ignored):
         """\
         Enter the kar-🐶 subshell.
@@ -97,7 +98,7 @@ class MyShell(shell.Shell):
     # 'cat' uses the file-system completer that ships with easyshell. Note that
     # the command's name 'cat' does not nesessarily have to relate to the name
     # of the method, which is 'do_show' in this case.
-    @shell.command('cat')
+    @shell.command('cat', nargs = '?')
     def do_show(self, cmd, args):
         """\
         Display content of a file.
@@ -107,9 +108,6 @@ class MyShell(shell.Shell):
         if not args:
             self.stdout.write(os.getcwd())
             self.stdout.write('\n')
-            return
-        if len(args) > 1:
-            self.stderr.write('cat: too many arguments: {}\n'.format(args))
             return
         fname = args[0]
         with open(fname, 'r', encoding = 'utf8') as f:

@@ -33,7 +33,7 @@ import traceback
 # Decorators with arguments is a little bit tricky to get right. A good
 # thread on it is:
 #       http://stackoverflow.com/questions/5929107/python-decorators-with-parameters
-def command(*commands, visible = True, internal = False):
+def command(*commands, visible = True, internal = False, nargs = '*'):
     """Decorate a function to be the entry function of commands.
 
     Arguments:
@@ -41,6 +41,17 @@ def command(*commands, visible = True, internal = False):
         visible: This command is visible in tab completions.
         internal: The lexing rule is unchanged even if the parse_line() method
             is overloaded in the subclasses.
+        nargs: Short for number of arguments. Similar to the nargs argument in
+            the argparse module. Has the following valid values:
+                    a non-negative integer
+                    a list/set/tuple/range of non-negative integers
+                    '*':        zero or more
+                    '?':        zero or one
+                    '+':        one or more
+            The command method, whose interface is described below, will check
+            the number of arguments. If it does not match this nargs argument,
+            an error message will be printed to self.stderr and the shell is
+            resumed.
 
     ----------------------------
     Interface of command methods:
@@ -55,13 +66,62 @@ def command(*commands, visible = True, internal = False):
             '''
             pass
     """
+    # Strict checking of the nargs argument.
+    allowed_strs = {'*', '?', '+'}
+    err_str = textwrap.dedent('''\
+            command: '{}' is invalid, must be a non-negative integer, a
+            list/set/tuple/range of non-negative integer, or one of {}
+            '''.format(nargs, allowed_strs))
+    if isinstance(nargs, str):
+        if not nargs in allowed_strs:
+            raise RuntimeError(err_str)
+    elif isinstance(nargs, int):
+        if nargs < 0:
+            raise RuntimeError(err_str)
+    else:
+        nargs = list(nargs)
+        for ele in nargs:
+            if not isinstance(ele, int) or ele < 0:
+                raise RuntimeError(err_str)
+
     def decorated_func(f):
-        f.__command__ = {
+        def inner_func(self, cmd, args):
+            # Check the number of args according to nargs.
+            n = len(args)
+            if isinstance(nargs, str):
+                if nargs == '*':
+                    pass
+                elif nargs == '?':
+                    if n > 1:
+                        self.err("{}: expect 0 or 1 argument, provided {}: {}\n".
+                                format(cmd, n, args))
+                        return
+                elif nargs == '+':
+                    if n == 0:
+                        self.err("{}: expect 1 or more arguments, provided {}: {}\n".
+                                format(cmd, n, args))
+                        return
+            elif isinstance(nargs, int):
+                if n != nargs:
+                        self.err("{}: expect {} arguments, provided {}: {}\n".
+                                format(cmd, nargs, n, args))
+                        return
+            else:
+                # nargs is already converted to a list.
+                if not n in nargs:
+                        self.err("{}: the number of arguments could be one of "
+                                "{}, provided {}: {}\n".
+                                format(cmd, nargs, n, args))
+                        return
+            return f(self, cmd, args)
+        inner_func.__name__ = f.__name__
+        inner_func.__doc__ = f.__doc__
+        inner_func.__command__ = {
                 'commands': list(commands),
                 'visible': visible,
                 'internal': internal,
         }
-        return f
+        return inner_func
     return decorated_func
 
 
@@ -336,6 +396,10 @@ class _ShellBase(object):
     def print_debug(self, msg):
         if self.debug:
             print(msg, file = self.stderr)
+
+    def err(self, msg):
+        """Print message to self.stderr as-is."""
+        self.stderr.write(msg)
 
     def launch_subshell(self, shell_cls, cmd, args, *, prompt_display = None):
         """Launch a subshell.
