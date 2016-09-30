@@ -33,14 +33,14 @@ import traceback
 # Decorators with arguments is a little bit tricky to get right. A good
 # thread on it is:
 #       http://stackoverflow.com/questions/5929107/python-decorators-with-parameters
-def command(*commands, is_visible = True, is_internal = False):
+def command(*commands, visible = True, internal = False):
     """Decorate a function to be the entry function of commands.
 
     Arguments:
         commands: Names of command that should trigger this function object.
-        is_visible: This command is visible in tab completions.
-        is_internal: The lexing rule is unchanged even if the parse_line()
-            method is overloaded in the subclasses.
+        visible: This command is visible in tab completions.
+        internal: The lexing rule is unchanged even if the parse_line() method
+            is overloaded in the subclasses.
 
     ----------------------------
     Interface of command methods:
@@ -58,8 +58,8 @@ def command(*commands, is_visible = True, is_internal = False):
     def decorated_func(f):
         f.__command__ = {
                 'commands': list(commands),
-                'is_visible': is_visible,
-                'is_internal': is_internal,
+                'visible': visible,
+                'internal': internal,
         }
         return f
     return decorated_func
@@ -79,12 +79,12 @@ def getcommands(f):
 
 def isvisiblecommand(f):
     """Is the function object a visible command or not."""
-    return getattr(f, '__command__')['is_visible']
+    return getattr(f, '__command__')['visible']
 
 
 def isinternalcommand(f):
     """Is the function object an internal command or not."""
-    return getattr(f, '__command__')['is_internal']
+    return getattr(f, '__command__')['internal']
 
 
 def helper(*commands):
@@ -579,8 +579,8 @@ class _ShellBase(object):
             2.  The input line is completely made of whitespace characters.
             3.  The input line is the EOF character.
             4.  The first token, as tokenized by shlex.split(), is '!'.
-            5.  Internal commands, i.e., commands registered with
-                    is_internal = True
+            5.  Internal commands, i.e., commands registered with internal =
+                    True
 
         Arguments:
             The line to parse.

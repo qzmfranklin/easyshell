@@ -11,7 +11,7 @@ class BasicShell(_ShellBase):
 
     """Shell with a few built-in commands."""
 
-    @command('!', is_internal = True, is_visible = False)
+    @command('!', internal = True, visible = False)
     def _do_exec(self, cmd, args):
         """Execute a command using subprocess.Popen().
         """
@@ -22,7 +22,7 @@ class BasicShell(_ShellBase):
                 shell = True, stdout = self.stdout)
         proc.wait()
 
-    @command('end', 'exit', is_internal = True)
+    @command('end', 'exit', internal = True)
     def _do_exit(self, cmd, args):
         """\
         Exit shell.
@@ -62,7 +62,7 @@ class BasicShell(_ShellBase):
         return [ x for x in { 'root', 'all', } \
                 if x.startswith(text) ]
 
-    @command('history', is_internal = True)
+    @command('history', internal = True)
     def _do_history(self, cmd, args):
         """\
         Display history.
@@ -90,7 +90,7 @@ class BasicShell(_ShellBase):
         return [ x for x in { 'clear', 'clearall' } \
                 if x.startswith(text) ]
 
-    @command('stack', is_internal = True)
+    @command('stack', internal = True)
     def _do_stack(self, cmd, args):
         """\
         Manage the shell stack.

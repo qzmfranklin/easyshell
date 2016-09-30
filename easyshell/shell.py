@@ -6,7 +6,7 @@ class _Shell(BasicShell):
 
     """Embed DebuggingShell into BasicShell."""
 
-    @subshell(DebuggingShell, 'debug', is_internal = True)
+    @subshell(DebuggingShell, 'debug', internal = True)
     def _do_debug(self, cmd, args):
         """\
         Enter the debugging shell.
