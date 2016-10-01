@@ -1,3 +1,5 @@
+import sys
+
 def update_parser(parser):
     """Update the parser object for the shell.
 
