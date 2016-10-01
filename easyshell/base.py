@@ -289,6 +289,7 @@ class _ShellBase(object):
           - Recursively launch subshell.
           - Register commands, helpers, and completers.
           - The ?<TAB> help experience.
+          - Comment a line that starts with #
 
     Subclasses in the same module must implement a few command methods and
     completer methods to become a functional shell:
@@ -602,7 +603,8 @@ class _ShellBase(object):
                 to '\x04', i.e., 'D' - 64, if the EOF character is the only
                 character from the shell.
         """
-        if not line:
+        # Ignoe empty lines and lines starting with a pound sign.
+        if not line or line.rstrip().startswith('#'):
             return
 
         cmd, args = ( '', [] )
