@@ -394,6 +394,11 @@ class _ShellBase(object):
         """The temporary for storing the history of this shell."""
         return os.path.join(self._temp_dir, 'history', 's-' + self.prompt[1:-2])
 
+    @property
+    def parent(self):
+        """The immediate parent shell object that launched this shell."""
+        return self._mode_stack[-1].shell
+
     def print_debug(self, msg):
         if self.debug:
             print(msg, file = self.stderr)
