@@ -33,7 +33,8 @@ import traceback
 # Decorators with arguments is a little bit tricky to get right. A good
 # thread on it is:
 #       http://stackoverflow.com/questions/5929107/python-decorators-with-parameters
-def command(*commands, visible = True, internal = False, nargs = '*'):
+def command(*commands, visible = True, internal = False, deprecated = False,
+        nargs = '*'):
     """Decorate a function to be the entry function of commands.
 
     Arguments:
@@ -41,6 +42,9 @@ def command(*commands, visible = True, internal = False, nargs = '*'):
         visible: This command is visible in tab completions.
         internal: The lexing rule is unchanged even if the parse_line() method
             is overloaded in the subclasses.
+        deprecated: This command is deprecated and is subject to removal at any
+            later version. When this command is invoked, a warning message is
+            printed to self.stdout.
         nargs: Short for number of arguments. Similar to the nargs argument in
             the argparse module. Has the following valid values:
                     a non-negative integer
@@ -86,6 +90,12 @@ def command(*commands, visible = True, internal = False, nargs = '*'):
 
     def decorated_func(f):
         def inner_func(self, cmd, args):
+            # Print a warning message if this command is deprecated.
+            if deprecated:
+                self.warning(textwrap.dedent("""\
+                        This command is deprecated and is subject to complete removal at any later
+                        version without any notice.
+                        """))
             # Check the number of args according to nargs.
             n = len(args)
             if isinstance(nargs, str):
@@ -93,23 +103,23 @@ def command(*commands, visible = True, internal = False, nargs = '*'):
                     pass
                 elif nargs == '?':
                     if n > 1:
-                        self.err("{}: expect 0 or 1 argument, provided {}: {}\n".
+                        self.error("{}: expect 0 or 1 argument, provided {}: {}\n".
                                 format(cmd, n, args))
                         return
                 elif nargs == '+':
                     if n == 0:
-                        self.err("{}: expect 1 or more arguments, provided {}: {}\n".
+                        self.error("{}: expect 1 or more arguments, provided {}: {}\n".
                                 format(cmd, n, args))
                         return
             elif isinstance(nargs, int):
                 if n != nargs:
-                        self.err("{}: expect {} arguments, provided {}: {}\n".
+                        self.error("{}: expect {} arguments, provided {}: {}\n".
                                 format(cmd, nargs, n, args))
                         return
             else:
                 # nargs is already converted to a list.
                 if not n in nargs:
-                        self.err("{}: the number of arguments could be one of "
+                        self.error("{}: the number of arguments could be one of "
                                 "{}, provided {}: {}\n".
                                 format(cmd, nargs, n, args))
                         return
@@ -120,6 +130,7 @@ def command(*commands, visible = True, internal = False, nargs = '*'):
                 'commands': list(commands),
                 'visible': visible,
                 'internal': internal,
+                'deprecated': deprecated,
         }
         return inner_func
     return decorated_func
@@ -146,6 +157,9 @@ def isinternalcommand(f):
     """Is the function object an internal command or not."""
     return getattr(f, '__command__')['internal']
 
+def isdeprecatedcommand(f):
+    """Is the function object an deprecated command or not."""
+    return getattr(f, '__command__')['deprecated']
 
 def helper(*commands):
     """Decorate a function to be the helper function of commands.
@@ -403,9 +417,13 @@ class _ShellBase(object):
         if self.debug:
             print(msg, file = self.stderr)
 
-    def err(self, msg):
+    def error(self, msg):
         """Print message to self.stderr as-is."""
         self.stderr.write(msg)
+
+    def warning(self, msg):
+        """Print a warning to self.stdout as=is."""
+        self.stdout.write(msg)
 
     def launch_subshell(self, shell_cls, cmd, args, *, prompt_display = None):
         """Launch a subshell.
