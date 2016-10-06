@@ -95,6 +95,12 @@ class MyShell(shell.Shell):
         """
         return 'kar-🐶'
 
+    @shell.command('deprecated', deprecated = True, nargs = 0)
+    def do_deprecated(self, cmd, args_ignored):
+        """Demo deprecated command.
+        """
+        print("This command demonstrates deprecation.")
+
     # 'cat' uses the file-system completer that ships with easyshell. Note that
     # the command's name 'cat' does not nesessarily have to relate to the name
     # of the method, which is 'do_show' in this case.

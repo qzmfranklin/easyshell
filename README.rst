@@ -10,24 +10,23 @@ Installation
 
 From pip3::
 
-    $ pip3 install --upgrade easyshell
+    $ pip3 install -U easyshell
 
 From source::
 
-    $ python3 setup.py --quiet install
+    $ ./setup.py -U install
 
-Example
-=======
+Example Shell
+=============
 
-You can try out the example shell that ships with the source code::
+To experience this kind of shells, please try out the example shell that comes
+with the source code::
 
-    $ ./my_shell.py
+    $ python3 -m easyshell
 
-Usage Examples
-=======================
+Demo
+====
 
-See the example file my_shell.py.
-
-Here is a demo:
+This is a gif from a very early version:
 
 .. image:: https://raw.githubusercontent.com/qzmfranklin/easyshell/qzmfranklin-gif/tty.gif
