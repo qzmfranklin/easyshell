@@ -1,4 +1,5 @@
-from .base import command, iscommand, \
+from .base import deprecated, isdeprecated, \
+        command, iscommand, \
         isvisiblecommand, isinternalcommand, \
         helper, ishelper, \
         completer, iscompleter, \

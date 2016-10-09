@@ -29,12 +29,40 @@ import tempfile
 import textwrap
 import traceback
 
+def isdeprecated(f):
+    """Is the function object deprecated or not."""
+    return hasattr(f, '__deprecated__') and f.__deprecated__ == True
+
+def iscommand(f):
+    """Is the function object a command or not."""
+    return hasattr(f, '__command__')
+
+def deprecated(f):
+    """Decorate a function object as deprecated.
+
+    Work nicely with the @command and @subshell decorators.
+
+    Add a __deprecated__ field to the input object and set it to True.
+    """
+    def inner_func(*args, **kwargs):
+        # Do not print the same warning message twice.
+        if not isdeprecated(f):
+            print(textwrap.dedent("""\
+                    This command is deprecated and is subject to complete
+                    removal at any later version without notice.
+                    """))
+        f(*args, **kwargs)
+    inner_func.__deprecated__ = True
+    inner_func.__doc__ = f.__doc__
+    inner_func.__name__ = f.__name__
+    if iscommand(f):
+        inner_func.__command__ = f.__command__
+    return inner_func
 
 # Decorators with arguments is a little bit tricky to get right. A good
 # thread on it is:
 #       http://stackoverflow.com/questions/5929107/python-decorators-with-parameters
-def command(*commands, visible = True, internal = False, deprecated = False,
-        nargs = '*'):
+def command(*commands, visible = True, internal = False, nargs = '*'):
     """Decorate a function to be the entry function of commands.
 
     Arguments:
@@ -42,9 +70,6 @@ def command(*commands, visible = True, internal = False, deprecated = False,
         visible: This command is visible in tab completions.
         internal: The lexing rule is unchanged even if the parse_line() method
             is overloaded in the subclasses.
-        deprecated: This command is deprecated and is subject to removal at any
-            later version. When this command is invoked, a warning message is
-            printed to self.stdout.
         nargs: Short for number of arguments. Similar to the nargs argument in
             the argparse module. Has the following valid values:
                     a non-negative integer
@@ -90,12 +115,6 @@ def command(*commands, visible = True, internal = False, deprecated = False,
 
     def decorated_func(f):
         def inner_func(self, cmd, args):
-            # Print a warning message if this command is deprecated.
-            if deprecated:
-                self.warning(textwrap.dedent("""\
-                        This command is deprecated and is subject to complete removal at any later
-                        version without any notice.
-                        """))
             # Check the number of args according to nargs.
             n = len(args)
             if isinstance(nargs, str):
@@ -130,18 +149,16 @@ def command(*commands, visible = True, internal = False, deprecated = False,
                 'commands': list(commands),
                 'visible': visible,
                 'internal': internal,
-                'deprecated': deprecated,
         }
+        # If f is deprecated, inner_func should also be deprecated.
+        if isdeprecated(f):
+            inner_func = deprecated(inner_func)
         return inner_func
     return decorated_func
 
 
 # The naming convention is same as the inspect module, which has such predicate
 # methods as isfunction, isclass, ismethod, etc..
-def iscommand(f):
-    """Is the function object a command or not."""
-    return hasattr(f, '__command__')
-
 
 def getcommands(f):
     """Get the list of commands that this function object is registered for."""

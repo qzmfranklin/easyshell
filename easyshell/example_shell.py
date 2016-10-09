@@ -3,6 +3,7 @@ import textwrap
 
 import easycompleter
 
+from .base import deprecated
 from . import shell
 
 # The subshell classes must be defined before being referenced.
@@ -95,7 +96,8 @@ class MyShell(shell.Shell):
         """
         return 'kar-🐶'
 
-    @shell.command('deprecated', deprecated = True, nargs = 0)
+    @deprecated
+    @shell.command('deprecated', nargs = 0)
     def do_deprecated(self, cmd, args_ignored):
         """Demo deprecated command.
         """
