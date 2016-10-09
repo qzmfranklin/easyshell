@@ -31,7 +31,7 @@ import traceback
 
 def isdeprecated(f):
     """Is the function object deprecated or not."""
-    return hasattr(f, '__deprecated__') and f.__deprecated__ == True
+    return hasattr(f, '__deprecated__') and f.__deprecated__
 
 def iscommand(f):
     """Is the function object a command or not."""
@@ -45,12 +45,10 @@ def deprecated(f):
     Add a __deprecated__ field to the input object and set it to True.
     """
     def inner_func(*args, **kwargs):
-        # Do not print the same warning message twice.
-        if not isdeprecated(f):
-            print(textwrap.dedent("""\
-                    This command is deprecated and is subject to complete
-                    removal at any later version without notice.
-                    """))
+        print(textwrap.dedent("""\
+                This command is deprecated and is subject to complete
+                removal at any later version without notice.
+                """))
         f(*args, **kwargs)
     inner_func.__deprecated__ = True
     inner_func.__doc__ = f.__doc__
@@ -150,9 +148,11 @@ def command(*commands, visible = True, internal = False, nargs = '*'):
                 'visible': visible,
                 'internal': internal,
         }
-        # If f is deprecated, inner_func should also be deprecated.
+        # If f is deprecated, inner_func should also be deprecated. Do not use
+        # the deprecated() function directly, as that adds duplicate warning
+        # message.
         if isdeprecated(f):
-            inner_func = deprecated(inner_func)
+            inner_func.__deprecated__ = True
         return inner_func
     return decorated_func
 
