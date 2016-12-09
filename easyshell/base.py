@@ -267,39 +267,56 @@ def iscompleter(f):
 def subshell(shell_cls, *commands, **kwargs):
     """Decorate a function to conditionally launch a _ShellBase subshell.
 
-    The additional prompt string is the return value of the method. If it is an
-    empty string, or anything that evaluates to None/False, the subshell is not
-    launched. This makes sense as the subshell must have a different prompt from
-    its parent shell.
-
     Arguments:
         shell_cls: A subclass of _ShellBase to be launched.
         commands: Names of command that should trigger this function object.
         kwargs: The keyword arguments for the command decorator method.
 
     -----------------------------
-    Interface of subshell methods:
+    Interface of methods decorated by this decorator method:
 
-        @command(SomeShellClass, 'foo')
-        def bar(self, args):
+        @command(SomeShellClass, 'foo', 'bar')
+        def bar(self, cmd, args):
             '''The command 'foo' invokes this method then launches the subshell.
 
             Arguments:
-                args: A list of strings. This list is obtianed via
-                    shlex.split().
+                cmd: A string, the name of the command that triggered this
+                    function. This is useful for knowing which command, in this
+                    case, 'foo' or 'bar', triggered this method.
+                args: The list of arguments passed along with the command.
 
             Returns:
-                A string used as the prompt.
+                There are three categories of valid return values.
+                    None, False, or anything that evaluates to False: The
+                        subshell is not invoked. This is useful for making a
+                        command conditionally launch a subshell.
+                    String: A string will appended to the prompt string to
+                        uniquely identify the subshell.
+                    A 2-tuple of type (string, dict): The string will be
+                        appended to the prompt string. The dictionary stores the
+                        data passed to the subshell. These data are the context
+                        of the subshell. The parent shell must conform to the
+                        subhshell class in terms of which key-value pairs to
+                        pass to the subshell.
             '''
             pass
     """
     def decorated_func(f):
         def inner_func(self, cmd, args):
-            prompt_display = f(self, cmd, args)
-            if not prompt_display:
+            retval = f(self, cmd, args)
+            # Do not launch the subshell if the return value is None.
+            if not retval:
                 return
+            # Pass the context (see the doc string) to the subshell if the
+            # return value is a 2-tuple. Otherwise, the context is just an empty
+            # dictionary.
+            if isinstance(retval, tuple):
+                prompt, context = retval
+            else:
+                prompt = retval
+                context = {}
             return self.launch_subshell(shell_cls, cmd, args,
-                    prompt_display = prompt_display)
+                    prompt = prompt, context = context)
         inner_func.__name__ = f.__name__
         inner_func.__doc__ = f.__doc__
         obj = command(*commands, **kwargs)(inner_func) if commands else inner_func
@@ -320,7 +337,8 @@ class _ShellBase(object):
           - Recursively launch subshell.
           - Register commands, helpers, and completers.
           - The ?<TAB> help experience.
-          - Comment a line that starts with #
+          - Comment a line that starts with # .
+          - Context of a shell.
 
     Subclasses in the same module must implement a few command methods and
     completer methods to become a functional shell:
@@ -337,13 +355,16 @@ class _ShellBase(object):
             cmd: The command, as a unicode string, that was issued in the parent
                 shell for entering this subshell.
             args: Any additional arguments that were issued with the @cmd.
-            prompt_display: The unicode string to add to the prompt.
+            prompt: The unicode string to add to the prompt.
+            context: A dictionary storing the contextual information that the
+                subshell will utilize.
         """
-        def __init__(self, *, shell, cmd, args, prompt_display):
+        def __init__(self, *, shell, cmd, args, prompt, context):
             self.shell = shell
             self.cmd = cmd
             self.args = args
-            self.prompt_display = prompt_display
+            self.prompt = prompt
+            self.context = context
 
     EOF = chr(ord('D') - 64)
 
@@ -398,6 +419,20 @@ class _ShellBase(object):
 
         self.__completion_candidates = []
 
+    @property
+    def context(self):
+        """Get the context dictionary of this shell.
+
+        If this shell is a subshell, the context dictionary is passed via the
+        second element of the 2-tuple of the return value of the the method
+        decorated by the @subshell decorator. See the doc string of the
+        @subshell decorator method for how that is done.
+
+        If this shell is the root shell or the parent shell passed an empty
+        context to this shell, this property returns an empty dictionary.
+        """
+        return self._mode_stack[-1].context
+
     @classmethod
     def doc_string(cls):
         """Get the doc string of this class.
@@ -418,7 +453,7 @@ class _ShellBase(object):
     def prompt(self):
         return '({})$ '.format('-'.join(
                 [ self.root_prompt ] + \
-                [ m.prompt_display for m in self._mode_stack ]))
+                [ m.prompt for m in self._mode_stack ]))
 
     @property
     def history_fname(self):
@@ -442,7 +477,8 @@ class _ShellBase(object):
         """Print a warning to self.stdout as=is."""
         self.stdout.write(msg)
 
-    def launch_subshell(self, shell_cls, cmd, args, *, prompt_display = None):
+    def launch_subshell(self, shell_cls, cmd, args, *, prompt = None, context =
+            {}):
         """Launch a subshell.
 
         The doc string of the cmdloop() method explains how shell histories and
@@ -455,8 +491,9 @@ class _ShellBase(object):
         Arguments:
             shell_cls: The _ShellBase class object to instantiate and launch.
             args: Arguments used to launch this subshell.
-            prompt_display: The name of the subshell. The default, None, means
+            prompt: The name of the subshell. The default, None, means
                 to use the shell_cls.__name__.
+            context: A dictionary to pass to the subshell as its context.
 
         Returns:
             'root': Inform the parent shell to keep exiting until the root shell
@@ -469,12 +506,13 @@ class _ShellBase(object):
         # Save history of the current shell.
         readline.write_history_file(self.history_fname)
 
-        prompt_display = prompt_display if prompt_display else shell_cls.__name__
+        prompt = prompt if prompt else shell_cls.__name__
         mode = _ShellBase._Mode(
                 shell = self,
                 cmd = cmd,
                 args = args,
-                prompt_display = prompt_display,
+                prompt = prompt,
+                context = context,
         )
         shell = shell_cls(
                 batch_mode = self.batch_mode,

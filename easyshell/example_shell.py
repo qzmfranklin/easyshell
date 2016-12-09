@@ -39,6 +39,10 @@ class FooShell(shell.Shell):
     def do_kar(self, cmd, args):
         return 'karPROMPT' + '@'.join(args)
 
+    @shell.command('context')
+    def do_context(self, cmd, args):
+        print(self.context)
+
 
 class BarShell(shell.Shell):
 
@@ -87,7 +91,8 @@ class MyShell(shell.Shell):
     def do_bar(self, cmd, args_ignored):
         return 'BarPrompt'
 
-    # The same Shell class, KarShell, can be freely reused.
+    # The same Shell class, KarShell, can be freely reused. The return value of
+    # this method is appended to the prompt string of the subshell.
     @shell.subshell(KarShell, 'kar-🐶', nargs = 0)
     def do_kar(self, cmd, args_ignored):
         """\
@@ -95,6 +100,20 @@ class MyShell(shell.Shell):
         Yes, emojis can be part of a command.
         """
         return 'kar-🐶'
+
+    # Pass arbitrary arguments to the subshell via the context.
+    @shell.subshell(FooShell, 'con-foo', nargs = '*')
+    def do_con_foo(self, cmd, args):
+        """\
+        Enter the foo-subshell with context.
+
+        The FooShell implemented a 'context' command that dumps the context it
+        inherited from the parent shell.
+
+        The word con-foo stands for 'contextual foo-shell'.
+        """
+        context = { 'args': args }
+        return (cmd, context)
 
     @deprecated
     @shell.command('deprecated', nargs = 0)
