@@ -23,7 +23,7 @@ class BasicShell(_ShellBase):
                 shell = True, stdout = self.stdout)
         proc.wait()
 
-    @command('end', 'exit', internal = True)
+    @command('end', 'exit', internal = True, nargs = '?')
     def _do_exit(self, cmd, args):
         """\
         Exit shell.
@@ -63,7 +63,7 @@ class BasicShell(_ShellBase):
         return [ x for x in { 'root', 'all', } \
                 if x.startswith(text) ]
 
-    @command('history', internal = True)
+    @command('history', internal = True, nargs = '?')
     def _do_history(self, cmd, args):
         """\
         Display history.
@@ -91,7 +91,7 @@ class BasicShell(_ShellBase):
         return [ x for x in { 'clear', 'clearall' } \
                 if x.startswith(text) ]
 
-    @command('stack', internal = True)
+    @command('stack', internal = True, nargs = '?')
     def _do_stack(self, cmd, args):
         """\
         Manage the shell stack.
@@ -147,7 +147,7 @@ class BasicShell(_ShellBase):
             self.stdout.write(line)
             self.stdout.write('\n')
 
-    @command('help', internal = True)
+    @command('help', internal = True, nargs = 0)
     def _do_help(self, cmd, args):
         """Display doc strings of the shell and its commands.
         """
