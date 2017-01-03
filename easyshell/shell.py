@@ -48,6 +48,8 @@ class Shell(_Shell):
     """Interactive shell.
 
     Get help:
+            help                Display information about this shell and its
+                                commands.
             <TAB>               Display commands.
             ?<TAB>              Display this message.
             <command>?<TAB>     Display help message for <command>.
