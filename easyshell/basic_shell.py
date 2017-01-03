@@ -3,9 +3,10 @@ import os
 import readline
 import shutil
 import subprocess
+import terminaltables
 import textwrap
 
-from .base import _ShellBase, command, helper, completer
+from .base import _ShellBase, command, helper, completer, iscommand, getcommands
 
 class BasicShell(_ShellBase):
 
@@ -145,3 +146,33 @@ class BasicShell(_ShellBase):
                     ': {}@{}'.format(mode.cmd, mode.args)
             self.stdout.write(line)
             self.stdout.write('\n')
+
+    @command('help', internal = True)
+    def _do_help(self, cmd, args):
+        """Display doc strings of the shell and its commands.
+        """
+        print(self.doc_string())
+        print()
+
+        # Create data of the commands table.
+        data_unsorted = []
+        cls = self.__class__
+        for name in dir(cls):
+            obj = getattr(cls, name)
+            if iscommand(obj):
+                cmds = []
+                for cmd in getcommands(obj):
+                    cmds.append(cmd)
+                cmd_str = ','.join(sorted(cmds))
+                doc_str = textwrap.dedent(obj.__doc__) if obj.__doc__ else \
+                        '(no doc string available)'
+                data_unsorted.append([cmd_str, doc_str])
+        data_sorted = sorted(data_unsorted, key = lambda x: x[0])
+        data = [['COMMANDS', 'DOC STRING']] + data_sorted
+
+        # Create the commands table.
+        table_banner = 'List of Available Commands'
+        table = terminaltables.SingleTable(data, table_banner)
+        table.inner_row_border = True
+        table.inner_heading_row_border = True
+        print(table.table)
