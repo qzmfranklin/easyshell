@@ -142,7 +142,7 @@ class BasicShell(_ShellBase):
             whitespace_prefix = ' ' * len(tree_prefix) * i
             mode = self._mode_stack[i]
             line = index_prefix + whitespace_prefix + \
-                    tree_prefix + mode.prompt_display + \
+                    tree_prefix + mode.prompt + \
                     ': {}@{}'.format(mode.cmd, mode.args)
             self.stdout.write(line)
             self.stdout.write('\n')
