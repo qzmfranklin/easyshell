@@ -12,7 +12,7 @@ with open(readme_fname, encoding='utf-8') as f:
 if __name__ == '__main__':
     setuptools.setup(
         name = 'easyshell',
-        version = '0.300',
+        version = '0.301',
         description = 'Library for creating recursive shells.',
         long_description = long_description,
         url = 'https://github.com/qzmfranklin/easyshell',
