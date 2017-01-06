@@ -164,7 +164,7 @@ class BasicShell(_ShellBase):
                 for cmd in getcommands(obj):
                     cmds.append(cmd)
                 cmd_str = ','.join(sorted(cmds))
-                doc_str = textwrap.dedent(obj.__doc__) if obj.__doc__ else \
+                doc_str = textwrap.dedent(obj.__doc__).strip() if obj.__doc__ else \
                         '(no doc string available)'
                 data_unsorted.append([cmd_str, doc_str])
         data_sorted = sorted(data_unsorted, key = lambda x: x[0])
